@@ -3,7 +3,7 @@ extern "C" {
 #include <inttypes.h>
 #include <math.h>
 #include <stdlib.h>
-
+#include <stdio.h>
 #include "tables.h"
 
 #define ISQRT2 0.70710678118654f
@@ -163,15 +163,58 @@ void dequant_idct_block_8x8(int16_t *in_data, int16_t *out_data, uint8_t *quant_
         out_data[i] = mb[i];
 }
 
-void sad_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result)
+extern __host__ void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result);
+extern __global__ void happy_block_8x8_d(uint8_t *block1, uint8_t *block2, int stride, int *result);
+
+void cuda_error(const char *message)
 {
-    *result = 0;
-
-    int u,v;
-    for (v=0; v<8; ++v)
-        for (u=0; u<8; ++u)
-            *result += abs(block2[v*stride+u] - block1[v*stride+u]);
-
+   cudaError_t error = cudaGetLastError();
+   if(error!=cudaSuccess) {
+      fprintf(stderr,"ERROR: %s: %s\n", message, cudaGetErrorString(error) );
+      exit(-1);
+   }                         
 }
 
+} /* end extern "C" */
+
+__host__
+void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result)
+{	
+	*result = 0;
+	
+	const uint8_t BLOCKSIZE = 64;
+		
+	uint8_t *block1_d, *block2_d;
+	int *result_d = 0;
+	
+	cudaMalloc((void **) &block1_d, BLOCKSIZE);
+	cudaMalloc((void **) &block2_d, BLOCKSIZE);
+	cudaMalloc((void **) &result_d, sizeof(int));
+	
+	cudaMemcpy2D((void *) block1_d, 8, (const void *) block1, stride, 8, 8, cudaMemcpyHostToDevice);
+	cudaMemcpy2D((void *) block2_d, 8, (const void *) block2, stride, 8, 8, cudaMemcpyHostToDevice);
+	
+	happy_block_8x8_d<<<8, 8>>>(block1_d, block2_d, stride, result_d);
+			
+	cudaFree(block1_d);
+	cudaFree(block2_d);
+
+	printf("a:%d\n", *result);
+	cudaMemcpy((void *) result, result_d, sizeof(int), cudaMemcpyDeviceToHost);	
+	printf("b:%d\n", *result);
+	
+	cudaFree(result_d);
+		
+}
+
+
+__global__ 
+void happy_block_8x8_d(uint8_t *block1, uint8_t *block2, int stride, int *result)
+{
+	int i = (blockDim.x * blockIdx.x) + threadIdx.x;
+	
+	if(i < 64) {
+		*result += abs(block1[i] - block2[i]);	
+	}
+			
 }

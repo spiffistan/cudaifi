@@ -48,9 +48,10 @@ static void me_block_8x8(struct c63_common *cm, int mb_x, int mb_y, uint8_t *ori
         for (x=left; x<right; ++x)
         {
             int sad;
-            sad_block_8x8(orig + my*w+mx, ref + y*w+x, w, &sad);
+            //sad_block_8x8(orig + my*w+mx, ref + y*w+x, w, &sad);
+			happy_block_8x8(orig + my*w+mx, ref + y*w+x, w, &sad);
 
-//            printf("(%4d,%4d) - %d\n", x, y, sad);
+//            printf("(%4d,%4d) %d\n", x, y, sad);
 
             if (sad < best_sad)
             {
