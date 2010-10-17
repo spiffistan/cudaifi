@@ -169,4 +169,5 @@ void sad_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result)
     for (v=0; v<8; ++v)
         for (u=0; u<8; ++u)
             *result += abs(block2[v*stride+u] - block1[v*stride+u]);
+
 }
