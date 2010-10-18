@@ -164,7 +164,9 @@ void dequant_idct_block_8x8(int16_t *in_data, int16_t *out_data, uint8_t *quant_
 }
 
 extern __host__ void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result);
-extern __global__ void happy_block_8x8_d(uint8_t *block1, uint8_t *block2, int stride, int *result);
+extern __global__ void happy_block_8x8_d(uint8_t *block1, uint8_t *block2, uint32_t *result_block_d, int stride);
+extern __global__ void reduce_sum(uint32_t *result_block_d, int *result_d);
+
 
 void cuda_error(const char *message)
 {
@@ -177,6 +179,7 @@ void cuda_error(const char *message)
 
 } /* end extern "C" */
 
+
 __host__
 void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result)
 {	
@@ -184,37 +187,93 @@ void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result)
 	
 	const uint8_t BLOCKSIZE = 64;
 		
-	uint8_t *block1_d, *block2_d;
 	int *result_d = 0;
+		
+	uint8_t *block1_d, *block2_d;
 	
-	cudaMalloc((void **) &block1_d, BLOCKSIZE);
-	cudaMalloc((void **) &block2_d, BLOCKSIZE);
+	uint32_t *result_block_d;
+		
+	cudaMalloc((void **) &block1_d, 8*stride);
+	cudaMalloc((void **) &block2_d, 8*stride);
+	cudaMalloc((void **) &result_block_d, BLOCKSIZE*sizeof(uint32_t));
 	cudaMalloc((void **) &result_d, sizeof(int));
-	
+/*	
 	cudaMemcpy2D((void *) block1_d, 8, (const void *) block1, stride, 8, 8, cudaMemcpyHostToDevice);
 	cudaMemcpy2D((void *) block2_d, 8, (const void *) block2, stride, 8, 8, cudaMemcpyHostToDevice);
-	
-	happy_block_8x8_d<<<8, 8>>>(block1_d, block2_d, stride, result_d);
-			
-	cudaFree(block1_d);
-	cudaFree(block2_d);
+*/
+	cudaMemcpy(block1_d, block1, 8*stride, cudaMemcpyHostToDevice);
+	cudaMemcpy(block2_d, block2, 8*stride, cudaMemcpyHostToDevice);
 
-	printf("a:%d\n", *result);
-	cudaMemcpy((void *) result, result_d, sizeof(int), cudaMemcpyDeviceToHost);	
-	printf("b:%d\n", *result);
+	for(int i = 0; i < 8*352; i+=352) {
+		for(int j = 0; j < 8; j++) {
+			if(j % 8 == 0)
+				printf("\n");
+			printf("%3d ", block1[i+j]);
+		}
+	}
 	
-	cudaFree(result_d);
+	printf("\n----");
+	
+	for(int i = 0; i < 8*352; i+=352) {
+		for(int j = 0; j < 8; j++) {
+			if(j % 8 == 0)
+				printf("\n");
+			printf("%3d ", block1_d[i+j]);
+		}
+	}
+	
+	printf("\n\n\n\n");
+
+			
+	happy_block_8x8_d<<<8, 8>>>(block1_d, block2_d, result_block_d, stride);
 		
+	cudaThreadSynchronize();
+	
+	reduce_sum<<<1, 64>>>(result_block_d, result_d);
+	
+	cudaThreadSynchronize();
+	
+	cudaMemcpy((void *) result, result_d, sizeof(int), cudaMemcpyDeviceToHost);	
+	
+	cudaFree(result_block_d);
+	cudaFree(block1_d);
+	cudaFree(block2_d);	
+	cudaFree(result_d);
+
 }
 
+__global__
+void reduce_sum(uint32_t *result_block_d, int *result_d)
+{
+	__shared__ uint32_t sdata[64];
+	
+	uint32_t tid = threadIdx.x;
+    uint32_t i = blockIdx.x*blockDim.x + threadIdx.x;
+
+	sdata[i] = result_block_d[i] + result_block_d[i+blockDim.x];
+	
+	__syncthreads();
+	
+	for(uint32_t s = blockDim.x/2; s>0; s>>=1) 
+	{
+    	if (tid < s) 
+	    {
+            sdata[tid] += sdata[tid + s];
+        }
+        __syncthreads();
+   	}
+	
+	if(tid == 0)
+		*result_d = sdata[tid];
+}
 
 __global__ 
-void happy_block_8x8_d(uint8_t *block1, uint8_t *block2, int stride, int *result)
+void happy_block_8x8_d(uint8_t *block1_d, uint8_t *block2_d, uint32_t *result_block_d, int stride)
 {
-	int i = (blockDim.x * blockIdx.x) + threadIdx.x;
+	int i = blockIdx.x * stride + threadIdx.x;
+	int j = blockDim.x * blockIdx.x + threadIdx.x;
 	
 	if(i < 64) {
-		*result += abs(block1[i] - block2[i]);	
-	}
-			
+		result_block_d[j] = abs(block1_d[i] - block2_d[i]);	
+	}	
 }
