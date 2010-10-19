@@ -166,7 +166,7 @@ void dequant_idct_block_8x8(int16_t *in_data, int16_t *out_data, uint8_t *quant_
 
 extern __host__ void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result);
 extern __global__ void happy_block_8x8_d(uint8_t *block1, uint8_t *block2, uint32_t *result_block_d, int stride);
-extern __global__ void reduce_sum(uint32_t *result_block_d, int *result_d);
+extern __global__ void reduce_sum(uint32_t *result_block_d, int *result_d, const int N);
 
 
 void catchCudaError(const char *message)
@@ -212,7 +212,7 @@ void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result)
 			printf("%3d ", block1[i+j]);
 		}
 	}
-	printf("\n--------------------");
+	printf("\n-------------------------------");
 	for(int i = 0; i < 8*352; i+=352) {
 		for(int j = 0; j < 8; j++) {
 			if(j % 8 == 0)
@@ -220,7 +220,7 @@ void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result)
 			printf("%3d ", block2[i+j]);
 		}
 	}
-	printf("\n>>>>>>>>>>>>>>>>>>>>");
+	printf("\n>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
 			
 	happy_block_8x8_d<<<8, 8>>>(block1_d, block2_d, result_block_d, stride);
 	
@@ -230,23 +230,28 @@ void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result)
 	
 	cudaMemcpy(block1_2, result_block_d, 64*sizeof(uint32_t), cudaMemcpyDeviceToHost);
 	
+	cudaThreadSynchronize();
+	
 	catchCudaError("Failed Execution 2");
 			
 	for(int i = 0; i < 64; i++) {
 			if(i % 8 == 0)
 				printf("\n");
-			printf("%+12u ", block1_2[i]);
+			printf("%3d ", block1_2[i]);
 	}	
-	printf("\n\n\n\n");
 	
-
-	reduce_sum<<<1, 64>>>(result_block_d, result_d);
+	reduce_sum<<<1, 64>>>(result_block_d, result_d, 64);
 	
 	cudaThreadSynchronize();
-	
+
+	printf("\nresult: %d\n", *result_d);
+	printf("\n\n\n\n");
+
 	catchCudaError("Failed Execution 3");
 	
 	cudaMemcpy((void *) result, result_d, sizeof(int), cudaMemcpyDeviceToHost);	
+	
+	printf("\nresult: %d\n", *result);
 	
 	catchCudaError("Failed Execution 4");
 	
@@ -267,9 +272,8 @@ void happy_block_8x8_d(uint8_t *block1_d, uint8_t *block2_d, uint32_t *result_bl
 	int i = blockIdx.x * stride + threadIdx.x;
 	int j = blockDim.x * blockIdx.x + threadIdx.x;
 	
-	if(i < 64) {
+	if(j < 64)
 		result_block_d[j] = abs(block1_d[i] - block2_d[i]);
-	}
 }
 /*
 __global__ void prescan(float *g_odata, float *g_idata, int n) 
@@ -323,31 +327,33 @@ __global__ void prescan(float *g_odata, float *g_idata, int n)
 ///////////////////////////////////////////////////////////////////////////////
 
 __global__
-void reduce_sum(uint32_t *input, int *result_d)
+void reduce_sum(uint32_t *input, int *result_d, const int N)
 {
-	__shared__ uint32_t sdata[64];
-	uint32_t tx = threadIdx.x;
-    uint32_t i = blockIdx.x*blockDim.x + threadIdx.x;
-
-	int x = 0;
-
-	if(i < 64)
-		x = input[i];
+	extern __shared__ int sdata[];
 	
-	sdata[tx] = x;
+	uint32_t tx = threadIdx.x;
+    uint32_t i = blockIdx.x * (blockDim.x*2) + threadIdx.x;
+
+	int sum = (i < N) ? input[i] : 0;
+
+	if(i + 64 < N)
+		sum += input[i+blockDim.x];
+	
+	sdata[tx] = sum;
 	
 	__syncthreads();
 	
-	for(uint32_t offset = blockDim.x / 2; offset > 0; offset >>= 1) 
+	for(uint32_t offset = blockDim.x / 2; offset > 32; offset >>= 1) 
 	{
     	if(tx < offset) 
-        	sdata[tx] += sdata[tx + offset];
+        	sdata[tx] = sum = sum + sdata[tx + offset];
         
 		__syncthreads();
    	}
-	
+
 	if(tx == 0)
 		*result_d = sdata[0];
+		
 }
 
 
