@@ -58,6 +58,7 @@ static void me_block_8x8(struct c63_common *cm, int mb_x, int mb_y, uint8_t *ori
                 mb->mv_x = x - mx;
                 mb->mv_y = y - my;
                 best_sad = sad;
+                //printf("new best sad for (%d,%d) @ (%4d,%4d) = %d\n", mb_x, mb_y, x, y, sad);
             }
         }
     }

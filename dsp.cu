@@ -166,8 +166,7 @@ void dequant_idct_block_8x8(int16_t *in_data, int16_t *out_data, uint8_t *quant_
 
 extern __host__ void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result);
 extern __global__ void happy_block_8x8_d(uint8_t *block1, uint8_t *block2, uint32_t *result_block_d, int stride);
-extern __global__ void reduce_sum(uint32_t *result_block_d, int *result_d, const int N);
-
+extern __global__ void reduce0(uint32_t *g_idata, uint32_t *g_odata, uint32_t n);
 
 void catchCudaError(const char *message)
 {
@@ -192,13 +191,13 @@ void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result)
 		
 	uint8_t *block1_d, *block2_d;
 	
-	uint32_t *block1_2[64];
-	
-	uint32_t *result_block_d;
+	uint32_t *block1_2 = (uint32_t*) malloc(64*sizeof(uint32_t));
+	uint32_t *result_block_d, *result_block_2_d;
 		
 	cudaMalloc((void **) &block1_d, 8*stride);
 	cudaMalloc((void **) &block2_d, 8*stride);
 	cudaMalloc((void **) &result_block_d, BLOCKSIZE*sizeof(uint32_t));
+	cudaMalloc((void **) &result_block_2_d, BLOCKSIZE*sizeof(uint32_t));
 	cudaMalloc((void **) &result_d, sizeof(int));
 
 	cudaMemcpy(block1_d, block1, 8*stride, cudaMemcpyHostToDevice);
@@ -221,15 +220,14 @@ void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result)
 		}
 	}
 	printf("\n>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
-			
-	happy_block_8x8_d<<<8, 8>>>(block1_d, block2_d, result_block_d, stride);
+	happy_block_8x8_d<<<8,8>>>(block1_d, block2_d, result_block_d, stride);
 	
 	cudaThreadSynchronize();
-	
+
 	catchCudaError("Failed Execution 1");
 	
 	cudaMemcpy(block1_2, result_block_d, 64*sizeof(uint32_t), cudaMemcpyDeviceToHost);
-	
+
 	cudaThreadSynchronize();
 	
 	catchCudaError("Failed Execution 2");
@@ -238,26 +236,27 @@ void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result)
 			if(i % 8 == 0)
 				printf("\n");
 			printf("%3d ", block1_2[i]);
-	}	
-	
-	reduce_sum<<<1, 64>>>(result_block_d, result_d, 64);
-	
+	}
+
+
+	reduce0<<<1, 64, 64*sizeof(uint32_t)>>>(result_block_d, result_block_2_d, 64);
+
 	cudaThreadSynchronize();
 
-	printf("\nresult: %d\n", *result_d);
-	printf("\n\n\n\n");
+	//printf("\nresult: %d\n", *result_d);
+	//printf("\n\n\n\n");
 
 	catchCudaError("Failed Execution 3");
-	
-	cudaMemcpy((void *) result, result_d, sizeof(int), cudaMemcpyDeviceToHost);	
-	
+
+	cudaMemcpy(result, &result_block_2_d[63], sizeof(uint32_t), cudaMemcpyDeviceToHost);
+
 	printf("\nresult: %d\n", *result);
-	
+
 	catchCudaError("Failed Execution 4");
-	
+
 	cudaFree(result_block_d);
 	cudaFree(block1_d);
-	cudaFree(block2_d);	
+	cudaFree(block2_d);
 	cudaFree(result_d);
 
 }
@@ -266,14 +265,15 @@ void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result)
 // CUDA KERNELS ///////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-__global__ 
+__global__
 void happy_block_8x8_d(uint8_t *block1_d, uint8_t *block2_d, uint32_t *result_block_d, int stride)
 {
 	int i = blockIdx.x * stride + threadIdx.x;
 	int j = blockDim.x * blockIdx.x + threadIdx.x;
-	
-	if(j < 64)
+	if(j < 64) {
 		result_block_d[j] = abs(block1_d[i] - block2_d[i]);
+
+	}
 }
 /*
 __global__ void prescan(float *g_odata, float *g_idata, int n) 
@@ -327,33 +327,21 @@ __global__ void prescan(float *g_odata, float *g_idata, int n)
 ///////////////////////////////////////////////////////////////////////////////
 
 __global__
-void reduce_sum(uint32_t *input, int *result_d, const int N)
-{
-	extern __shared__ int sdata[];
-	
-	uint32_t tx = threadIdx.x;
-    uint32_t i = blockIdx.x * (blockDim.x*2) + threadIdx.x;
+void reduce0(uint32_t *g_idata, uint32_t *g_odata, uint32_t n) {
 
-	int sum = (i < N) ? input[i] : 0;
+    extern __shared__ uint32_t temp[];
+    int thid = threadIdx.x;
 
-	if(i + 64 < N)
-		sum += input[i+blockDim.x];
-	
-	sdata[tx] = sum;
-	
-	__syncthreads();
-	
-	for(uint32_t offset = blockDim.x / 2; offset > 32; offset >>= 1) 
-	{
-    	if(tx < offset) 
-        	sdata[tx] = sum = sum + sdata[tx + offset];
-        
-		__syncthreads();
-   	}
+    temp[thid] = g_idata[thid];
 
-	if(tx == 0)
-		*result_d = sdata[0];
-		
+    __syncthreads();
+
+    for(int offset = 1;offset < n; offset *= 2) {
+        if(thid >= offset)
+            temp[thid] += temp[thid - offset];
+
+        __syncthreads();
+    }
+
+   	g_odata[thid] = temp[thid];
 }
-
-
