@@ -164,6 +164,7 @@ void dequant_idct_block_8x8(int16_t *in_data, int16_t *out_data, uint8_t *quant_
         out_data[i] = mb[i];
 }
 
+
 void catchCudaError(const char *message)
 {
    cudaError_t error = cudaGetLastError();
