@@ -1,4 +1,3 @@
-extern "C" {
 
 #include <inttypes.h>
 #include <math.h>
@@ -6,9 +5,10 @@ extern "C" {
 #include <stdio.h>
 #include <assert.h>
 #include "tables.h"
+#include "dsp.hcu"
 
 #define ISQRT2 0.70710678118654f
-
+extern "C" {
 static void transpose_block(float *in_data, float *out_data)
 {
     int i,j;
@@ -164,10 +164,6 @@ void dequant_idct_block_8x8(int16_t *in_data, int16_t *out_data, uint8_t *quant_
         out_data[i] = mb[i];
 }
 
-extern __host__ void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result);
-extern __global__ void happy_block_8x8_d(uint8_t *block1, uint8_t *block2, uint32_t *result_block_d, int stride);
-extern __global__ void reduce0(uint32_t *g_idata, uint32_t *g_odata, uint32_t n);
-
 void catchCudaError(const char *message)
 {
    cudaError_t error = cudaGetLastError();
@@ -275,54 +271,17 @@ void happy_block_8x8_d(uint8_t *block1_d, uint8_t *block2_d, uint32_t *result_bl
 
 	}
 }
-/*
-__global__ void prescan(float *g_odata, float *g_idata, int n) 
-{
 
-	extern __shared__ int temp[];
-	
-	int tx = threadIdx.x;
-	int offset = 1;
-	
-	temp[2*tx] = g_idata[2*tx];
-	temp[2*tx+1] = g_idata[2*tx+1];
-	
-	for(int i = n>>1; i > 0; i >>= 1) 
-	{
-		__syncthreads();
-		
-		if(tx < i)
-		{
-			int ai = offset*(2*tx+1)-1;
-			int bi = offset*(2*tx+2)-1;
-			
-			temp[bi] += temp[ai];
-		}
-		offset *= 2;
+__global__
+void diff_abs_frame(uint8_t *block1_d, uint8_t *block2_d, uint8_t *result_block_d, int size)
+{
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if(i < size) {
+		result_block_d[i] = abs(block1_d[i] - block2_d[i]);
+
 	}
-	
-	if(tx == 0) temp[n-1] = 0;
-	
-	for(int i = 1; i < n; d *= 2)
-	{
-		offset >>= 1;
-		__syncthreads();
-		
-		if(tx < i)
-		{
-			int ai = offset*(2*tx+1)-1;
-			int bi = offset*(2*tx+2)-1;
-			
-			int t = temp[ai];
-			temp[ai] = temp[bi];
-			temp[bi] += t; 
-		}
-	}
-	
-	__syncthreads();
-		
 }
-*/
+
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -345,3 +304,4 @@ void reduce0(uint32_t *g_idata, uint32_t *g_odata, uint32_t n) {
 
    	g_odata[thid] = temp[thid];
 }
+

@@ -122,8 +122,6 @@ void dct_quantize(uint8_t *in_data, uint8_t *prediction,
 
 void destroy_frame(struct frame *f);
 struct frame* create_frame(struct c63_common *cm, yuv_t *image);
-void c63_motion_estimate(struct c63_common *cm);
-void c63_motion_compensate(struct c63_common *cm);
 
 void dump_image(yuv_t *image, int w, int h, FILE *fp);
 

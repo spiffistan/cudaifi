@@ -12,6 +12,7 @@
 #include "tables.h"
 
 
+
 static char *output_file, *input_file;
 FILE *outfile;
 

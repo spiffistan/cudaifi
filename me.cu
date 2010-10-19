@@ -7,12 +7,14 @@
 #include <math.h>
 #include <assert.h>
 #include <limits.h>
-
 #include "c63.h"
+#include "me.hcu"
+#include "dsp.hcu"
 
+extern "C" {
 
 /* Motion estimation for 8x8 block */
-static void me_block_8x8(struct c63_common *cm, int mb_x, int mb_y, uint8_t *orig, uint8_t *ref, int cc)
+void me_block_8x8(struct c63_common *cm, int mb_x, int mb_y, uint8_t *orig, uint8_t *ref, int cc)
 {
     struct macroblock *mb = &cm->curframe->mbs[cc][mb_y * cm->padw[cc]/8 + mb_x];
 
@@ -71,11 +73,20 @@ static void me_block_8x8(struct c63_common *cm, int mb_x, int mb_y, uint8_t *ori
     mb->use_mv = 1;
 }
 
-void c63_motion_estimate(struct c63_common *cm)
+extern "C" void c63_motion_estimate(struct c63_common *cm)
 {
     /* Compare this frame with previous reconstructed frame */
+	uint8_t *image_orig, *image_ref, *diff;
+	int size = cm->width*cm->height;
+	cudaMalloc((void**)&image_orig, size * sizeof(uint8_t));
+	cudaMalloc((void**)&image_ref, size * sizeof(uint8_t));
+	cudaMalloc((void**)&diff, size * sizeof(uint8_t));
 
-    int mb_x, mb_y;
+	cudaMemcpy(image_orig, cm->curframe->orig->Y, size * sizeof(uint8_t), cudaMemcpyHostToDevice);
+	cudaMemcpy(image_ref, cm->curframe->orig->Y, size * sizeof(uint8_t), cudaMemcpyHostToDevice);
+
+
+	int mb_x, mb_y;
 
     /* Luma */
     for (mb_y=0; mb_y < cm->mb_rows; ++mb_y)
@@ -98,7 +109,8 @@ void c63_motion_estimate(struct c63_common *cm)
 }
 
 /* Motion compensation for 8x8 block */
-static void mc_block_8x8(struct c63_common *cm, int mb_x, int mb_y, uint8_t *predicted, uint8_t *ref, int cc)
+__host__
+void mc_block_8x8(struct c63_common *cm, int mb_x, int mb_y, uint8_t *predicted, uint8_t *ref, int cc)
 {
     struct macroblock *mb = &cm->curframe->mbs[cc][mb_y * cm->padw[cc]/8 + mb_x];
 
@@ -123,7 +135,7 @@ static void mc_block_8x8(struct c63_common *cm, int mb_x, int mb_y, uint8_t *pre
     }
 }
 
-void c63_motion_compensate(struct c63_common *cm)
+extern void c63_motion_compensate(struct c63_common *cm)
 {
     int mb_x, mb_y;
 
@@ -147,3 +159,4 @@ void c63_motion_compensate(struct c63_common *cm)
     }
 }
 
+}
