@@ -1,0 +1,11 @@
+#ifndef ME_HCI_
+#define ME_HCI_
+#include <inttypes.h>
+#include <stdint.h>
+
+extern "C" {
+extern void c63_motion_estimate(struct c63_common *cm);
+extern void c63_motion_compensate(struct c63_common *cm);
+}
+
+#endif /* CUDA_H_ */
