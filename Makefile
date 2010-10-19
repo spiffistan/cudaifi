@@ -5,8 +5,8 @@ CUDA_SDK_PATH     := /Developer/GPU\ Computing/C
 INCLUDES          += -I. -I$(CUDA_INSTALL_PATH)/include -I$(CUDA_SDK_PATH)/common/inc
 LIBS              := -L$(CUDA_INSTALL_PATH)/lib -L$(CUDA_SDK_PATH)/lib
 CFLAGS            := 
+NVCFLAGS          := -G -g
 LDFLAGS           := -lm -lcuda 
-NVCFLAGS          := 
 NVCC              := nvcc  
 CC                := /usr/bin/gcc-4.0 
 

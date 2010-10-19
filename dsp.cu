@@ -4,6 +4,7 @@ extern "C" {
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <assert.h>
 #include "tables.h"
 
 #define ISQRT2 0.70710678118654f
@@ -168,7 +169,7 @@ extern __global__ void happy_block_8x8_d(uint8_t *block1, uint8_t *block2, uint3
 extern __global__ void reduce_sum(uint32_t *result_block_d, int *result_d);
 
 
-void cuda_error(const char *message)
+void catchCudaError(const char *message)
 {
    cudaError_t error = cudaGetLastError();
    if(error!=cudaSuccess) {
@@ -191,18 +192,18 @@ void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result)
 		
 	uint8_t *block1_d, *block2_d;
 	
+	uint32_t *block1_2[64];
+	
 	uint32_t *result_block_d;
 		
 	cudaMalloc((void **) &block1_d, 8*stride);
 	cudaMalloc((void **) &block2_d, 8*stride);
 	cudaMalloc((void **) &result_block_d, BLOCKSIZE*sizeof(uint32_t));
 	cudaMalloc((void **) &result_d, sizeof(int));
-/*	
-	cudaMemcpy2D((void *) block1_d, 8, (const void *) block1, stride, 8, 8, cudaMemcpyHostToDevice);
-	cudaMemcpy2D((void *) block2_d, 8, (const void *) block2, stride, 8, 8, cudaMemcpyHostToDevice);
-*/
+
 	cudaMemcpy(block1_d, block1, 8*stride, cudaMemcpyHostToDevice);
 	cudaMemcpy(block2_d, block2, 8*stride, cudaMemcpyHostToDevice);
+	
 
 	for(int i = 0; i < 8*352; i+=352) {
 		for(int j = 0; j < 8; j++) {
@@ -211,29 +212,43 @@ void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result)
 			printf("%3d ", block1[i+j]);
 		}
 	}
-	
-	printf("\n----");
-	
+	printf("\n--------------------");
 	for(int i = 0; i < 8*352; i+=352) {
 		for(int j = 0; j < 8; j++) {
 			if(j % 8 == 0)
 				printf("\n");
-			printf("%3d ", block1_d[i+j]);
+			printf("%3d ", block2[i+j]);
 		}
 	}
-	
-	printf("\n\n\n\n");
-
+	printf("\n>>>>>>>>>>>>>>>>>>>>");
 			
 	happy_block_8x8_d<<<8, 8>>>(block1_d, block2_d, result_block_d, stride);
-		
+	
 	cudaThreadSynchronize();
 	
+	catchCudaError("Failed Execution 1");
+	
+	cudaMemcpy(block1_2, result_block_d, 64*sizeof(uint32_t), cudaMemcpyDeviceToHost);
+	
+	catchCudaError("Failed Execution 2");
+			
+	for(int i = 0; i < 64; i++) {
+			if(i % 8 == 0)
+				printf("\n");
+			printf("%+12u ", block1_2[i]);
+	}	
+	printf("\n\n\n\n");
+	
+
 	reduce_sum<<<1, 64>>>(result_block_d, result_d);
 	
 	cudaThreadSynchronize();
 	
+	catchCudaError("Failed Execution 3");
+	
 	cudaMemcpy((void *) result, result_d, sizeof(int), cudaMemcpyDeviceToHost);	
+	
+	catchCudaError("Failed Execution 4");
 	
 	cudaFree(result_block_d);
 	cudaFree(block1_d);
@@ -242,30 +257,9 @@ void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result)
 
 }
 
-__global__
-void reduce_sum(uint32_t *result_block_d, int *result_d)
-{
-	__shared__ uint32_t sdata[64];
-	
-	uint32_t tid = threadIdx.x;
-    uint32_t i = blockIdx.x*blockDim.x + threadIdx.x;
-
-	sdata[i] = result_block_d[i] + result_block_d[i+blockDim.x];
-	
-	__syncthreads();
-	
-	for(uint32_t s = blockDim.x/2; s>0; s>>=1) 
-	{
-    	if (tid < s) 
-	    {
-            sdata[tid] += sdata[tid + s];
-        }
-        __syncthreads();
-   	}
-	
-	if(tid == 0)
-		*result_d = sdata[tid];
-}
+///////////////////////////////////////////////////////////////////////////////
+// CUDA KERNELS ///////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
 __global__ 
 void happy_block_8x8_d(uint8_t *block1_d, uint8_t *block2_d, uint32_t *result_block_d, int stride)
@@ -274,6 +268,86 @@ void happy_block_8x8_d(uint8_t *block1_d, uint8_t *block2_d, uint32_t *result_bl
 	int j = blockDim.x * blockIdx.x + threadIdx.x;
 	
 	if(i < 64) {
-		result_block_d[j] = abs(block1_d[i] - block2_d[i]);	
-	}	
+		result_block_d[j] = abs(block1_d[i] - block2_d[i]);
+	}
 }
+/*
+__global__ void prescan(float *g_odata, float *g_idata, int n) 
+{
+
+	extern __shared__ int temp[];
+	
+	int tx = threadIdx.x;
+	int offset = 1;
+	
+	temp[2*tx] = g_idata[2*tx];
+	temp[2*tx+1] = g_idata[2*tx+1];
+	
+	for(int i = n>>1; i > 0; i >>= 1) 
+	{
+		__syncthreads();
+		
+		if(tx < i)
+		{
+			int ai = offset*(2*tx+1)-1;
+			int bi = offset*(2*tx+2)-1;
+			
+			temp[bi] += temp[ai];
+		}
+		offset *= 2;
+	}
+	
+	if(tx == 0) temp[n-1] = 0;
+	
+	for(int i = 1; i < n; d *= 2)
+	{
+		offset >>= 1;
+		__syncthreads();
+		
+		if(tx < i)
+		{
+			int ai = offset*(2*tx+1)-1;
+			int bi = offset*(2*tx+2)-1;
+			
+			int t = temp[ai];
+			temp[ai] = temp[bi];
+			temp[bi] += t; 
+		}
+	}
+	
+	__syncthreads();
+		
+}
+*/
+
+///////////////////////////////////////////////////////////////////////////////
+
+__global__
+void reduce_sum(uint32_t *input, int *result_d)
+{
+	__shared__ uint32_t sdata[64];
+	uint32_t tx = threadIdx.x;
+    uint32_t i = blockIdx.x*blockDim.x + threadIdx.x;
+
+	int x = 0;
+
+	if(i < 64)
+		x = input[i];
+	
+	sdata[tx] = x;
+	
+	__syncthreads();
+	
+	for(uint32_t offset = blockDim.x / 2; offset > 0; offset >>= 1) 
+	{
+    	if(tx < offset) 
+        	sdata[tx] += sdata[tx + offset];
+        
+		__syncthreads();
+   	}
+	
+	if(tx == 0)
+		*result_d = sdata[0];
+}
+
+
