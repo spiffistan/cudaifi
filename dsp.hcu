@@ -3,9 +3,14 @@
 #include <inttypes.h>
 #include <stdint.h>
 
-//static void me_block_8x8(struct c63_common *cm, int mb_x, int mb_y, uint8_t *orig, uint8_t *ref, int cc);
-extern "C" __host__ void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result);
-extern "C" __global__ void happy_block_8x8_d(uint8_t *block1, uint8_t *block2, uint32_t *result_block_d, int stride);
-extern "C" __global__ void reduce0(uint32_t *g_idata, uint32_t *g_odata, uint32_t n);
+extern "C" {
 
+	__global__ void happy_block_8x8(uint8_t *orig, uint8_t *ref, int stride, uint32_t *result_block);
+	//__global__ void happy_block_8x8_d(uint8_t *block1, uint8_t *block2, uint32_t *result_block_d, int stride);
+	//__global__ void reduce0(uint32_t *g_idata, uint32_t *g_odata, uint32_t n);
+	void print_buffer8(uint8_t* buffer, int n);
+	void print_buffer32(uint32_t* buffer, int n);
+	void catchCudaError(const char *message);
+
+}
 #endif /* DSP_HCU_ */

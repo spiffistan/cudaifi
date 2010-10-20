@@ -176,86 +176,65 @@ void catchCudaError(const char *message)
 
 } /* end extern "C" */
 
-
-__host__
-void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result)
-{	
-	*result = 0;
-	
-	const uint8_t BLOCKSIZE = 64;
-		
-	int *result_d = 0;
-		
-	uint8_t *block1_d, *block2_d;
-	
-	uint32_t *block1_2 = (uint32_t*) malloc(64*sizeof(uint32_t));
-	uint32_t *result_block_d, *result_block_2_d;
-		
-	cudaMalloc((void **) &block1_d, 8*stride);
-	cudaMalloc((void **) &block2_d, 8*stride);
-	cudaMalloc((void **) &result_block_d, BLOCKSIZE*sizeof(uint32_t));
-	cudaMalloc((void **) &result_block_2_d, BLOCKSIZE*sizeof(uint32_t));
-	cudaMalloc((void **) &result_d, sizeof(int));
-
-	cudaMemcpy(block1_d, block1, 8*stride, cudaMemcpyHostToDevice);
-	cudaMemcpy(block2_d, block2, 8*stride, cudaMemcpyHostToDevice);
-	
-
-	for(int i = 0; i < 8*352; i+=352) {
-		for(int j = 0; j < 8; j++) {
-			if(j % 8 == 0)
-				printf("\n");
-			printf("%3d ", block1[i+j]);
-		}
-	}
-	printf("\n-------------------------------");
-	for(int i = 0; i < 8*352; i+=352) {
-		for(int j = 0; j < 8; j++) {
-			if(j % 8 == 0)
-				printf("\n");
-			printf("%3d ", block2[i+j]);
-		}
-	}
-	printf("\n>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>");
-	happy_block_8x8_d<<<8,8>>>(block1_d, block2_d, result_block_d, stride);
-	
-	cudaThreadSynchronize();
-
-	catchCudaError("Failed Execution 1");
-	
-	cudaMemcpy(block1_2, result_block_d, 64*sizeof(uint32_t), cudaMemcpyDeviceToHost);
-
-	cudaThreadSynchronize();
-	
-	catchCudaError("Failed Execution 2");
-			
-	for(int i = 0; i < 64; i++) {
+void print_buffer8(uint8_t* buffer, int n)
+{
+	uint8_t *block1_2 = (uint8_t*)malloc(n*sizeof(uint8_t));
+	cudaMemcpy(block1_2, buffer, n*sizeof(uint8_t), cudaMemcpyDeviceToHost);
+	printf("-----------------------------------------------------\n");
+	for(int i = 0; i < n; i++) {
 			if(i % 8 == 0)
 				printf("\n");
-			printf("%3d ", block1_2[i]);
+			printf("%5d ", block1_2[i]);
 	}
 
+	printf("\n");
+}
 
-	reduce0<<<1, 64, 64*sizeof(uint32_t)>>>(result_block_d, result_block_2_d, 64);
+void print_buffer32(uint32_t* buffer, int n)
+{
+	uint32_t *block1_2 = (uint32_t*)malloc(n*sizeof(uint32_t));
+	cudaMemcpy(block1_2, buffer, n*sizeof(uint32_t), cudaMemcpyDeviceToHost);
+	printf("-----------------------------------------------------\n");
+	for(int i = 0; i < n; i++) {
+			if(i % 8 == 0)
+				printf("\n");
+			printf("%5d ", block1_2[i]);
+	}
 
-	cudaThreadSynchronize();
+	printf("\n");
+}
 
-	//printf("\nresult: %d\n", *result_d);
-	//printf("\n\n\n\n");
+__global__
+void happy_block_8x8(uint8_t *orig, uint8_t *ref, int stride, uint32_t *result_block)
+{	
+	extern __shared__ uint32_t results[];
+	int ref_index = (blockIdx.y * gridDim.x) + blockIdx.x;
+	ref = ref + (blockIdx.y * stride) + blockIdx.x;
+	int i = threadIdx.y * stride + threadIdx.x;
+	int j = blockDim.x * threadIdx.y + threadIdx.x;
+	if(j < 64) {
+		results[j] = abs(orig[i] - ref[i]);
 
-	catchCudaError("Failed Execution 3");
+	}
 
-	cudaMemcpy(result, &result_block_2_d[63], sizeof(uint32_t), cudaMemcpyDeviceToHost);
+	__syncthreads();
 
-	printf("\nresult: %d\n", *result);
 
-	catchCudaError("Failed Execution 4");
 
-	cudaFree(result_block_d);
-	cudaFree(block1_d);
-	cudaFree(block2_d);
-	cudaFree(result_d);
+	//reduce0<<<1, 64, 64*sizeof(uint32_t)>>>(result_block_d, result_block_2_d, 64);
+	int n = 64;
 
+    for(int offset = 1;offset < n; offset *= 2) {
+        if(j >= offset)
+            results[j] += results[j - offset];
+
+        __syncthreads();
+    }
+
+   	//g_odata[thid] = temp[thid];
+   	__syncthreads();
+   	if(j == 63)
+   		result_block[ref_index] = results[j];
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -265,20 +244,10 @@ void happy_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result)
 __global__
 void happy_block_8x8_d(uint8_t *block1_d, uint8_t *block2_d, uint32_t *result_block_d, int stride)
 {
-	int i = blockIdx.x * stride + threadIdx.x;
-	int j = blockDim.x * blockIdx.x + threadIdx.x;
+	int i = threadIdx.y * stride + threadIdx.x;
+	int j = blockDim.x * threadIdx.y + threadIdx.x;
 	if(j < 64) {
 		result_block_d[j] = abs(block1_d[i] - block2_d[i]);
-
-	}
-}
-
-__global__
-void diff_abs_frame(uint8_t *block1_d, uint8_t *block2_d, uint8_t *result_block_d, int size)
-{
-	int i = blockIdx.x * blockDim.x + threadIdx.x;
-	if(i < size) {
-		result_block_d[i] = abs(block1_d[i] - block2_d[i]);
 
 	}
 }
