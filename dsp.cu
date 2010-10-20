@@ -176,6 +176,7 @@ void catchCudaError(const char *message)
 
 } /* end extern "C" */
 
+/*
 void print_buffer8(uint8_t* buffer, int n)
 {
 	uint8_t *block1_2 = (uint8_t*)malloc(n*sizeof(uint8_t));
@@ -203,6 +204,12 @@ void print_buffer32(uint32_t* buffer, int n)
 
 	printf("\n");
 }
+*/
+///////////////////////////////////////////////////////////////////////////////
+// CUDA KERNELS ///////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+__constant__ int n = 64;
 
 __global__
 void happy_block_8x8(uint8_t *orig, uint8_t *ref, int stride, uint32_t *result_block)
@@ -219,11 +226,6 @@ void happy_block_8x8(uint8_t *orig, uint8_t *ref, int stride, uint32_t *result_b
 
 	__syncthreads();
 
-
-
-	//reduce0<<<1, 64, 64*sizeof(uint32_t)>>>(result_block_d, result_block_2_d, 64);
-	int n = 64;
-
     for(int offset = 1;offset < n; offset *= 2) {
         if(j >= offset)
             results[j] += results[j - offset];
@@ -237,41 +239,6 @@ void happy_block_8x8(uint8_t *orig, uint8_t *ref, int stride, uint32_t *result_b
    		result_block[ref_index] = results[j];
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// CUDA KERNELS ///////////////////////////////////////////////////////////////
-///////////////////////////////////////////////////////////////////////////////
-
-__global__
-void happy_block_8x8_d(uint8_t *block1_d, uint8_t *block2_d, uint32_t *result_block_d, int stride)
-{
-	int i = threadIdx.y * stride + threadIdx.x;
-	int j = blockDim.x * threadIdx.y + threadIdx.x;
-	if(j < 64) {
-		result_block_d[j] = abs(block1_d[i] - block2_d[i]);
-
-	}
-}
 
 
-///////////////////////////////////////////////////////////////////////////////
-
-__global__
-void reduce0(uint32_t *g_idata, uint32_t *g_odata, uint32_t n) {
-
-    extern __shared__ uint32_t temp[];
-    int thid = threadIdx.x;
-
-    temp[thid] = g_idata[thid];
-
-    __syncthreads();
-
-    for(int offset = 1;offset < n; offset *= 2) {
-        if(thid >= offset)
-            temp[thid] += temp[thid - offset];
-
-        __syncthreads();
-    }
-
-   	g_odata[thid] = temp[thid];
-}
 
