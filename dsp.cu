@@ -199,6 +199,7 @@ void cuda_me(uint8_t *original, uint8_t *reference, int stride, uint16_t *result
 	__shared__ uint16_t results[32*32];
 	//@TODO try to read reference as a 32bit in to get coalesced values on compute 1.1
 	int xyz_index = (threadIdx.y * LENGTH) + (threadIdx.z * blockDim.x)+ threadIdx.x;
+	int res_index = (threadIdx.y*32)+(threadIdx.z*8) + threadIdx.x;
 	int ref_index = (threadIdx.y * stride) + (threadIdx.z * blockDim.x)+ threadIdx.x;
 	int xy_index = (threadIdx.y * blockDim.x) + threadIdx.x;
 	//load ref
@@ -224,32 +225,55 @@ void cuda_me(uint8_t *original, uint8_t *reference, int stride, uint16_t *result
 	}
 	__syncthreads();
 	//TEST
+	for(int i = 0; i < mb_h;i++) {
+		results[(i*40*8)+xyz_index] = 0;
+	}
 
-
-
+	for(int y = 0; y < mb_h; y++)
+	{
+		for(int i = 0; i < 8; i++)
+		{
+			for(int j = 0; j < 8; j++)
+			{
+				results[(y*32*8)+res_index] = __usad(ref[(i*40)+xyz_index+j], orig[(i*8)+j], results[(y*32*8)+res_index]);
+			}
+		}
+	}
+	/*
 	for(int offsetY = 0; offsetY < 32; offsetY++) {
 		for(int offsetX = 0; offsetX < 8; offsetX++) {
 			//uSAD[threadIdx.z][xy_index] = abs(ref[xyz_index] - orig[xy_index]); //TODO use __usad()
 			uSAD[threadIdx.z][xy_index] = 0;
 			uSAD[threadIdx.z][xy_index] = __usad(ref[(offsetY*LENGTH)+offsetX+xyz_index], orig[xy_index], uSAD[threadIdx.z][xy_index]);
 			__syncthreads();
-			if(xy_index < 32)
+			if(xy_index < 32) {
 				uSAD[threadIdx.z][xy_index] += uSAD[threadIdx.z][xy_index+32];
+			}
 			__syncthreads();
 			if(xy_index < 16)
+			{
 				uSAD[threadIdx.z][xy_index] += uSAD[threadIdx.z][xy_index+16];
+			}
 			__syncthreads();
 			if(xy_index < 8)
+			{
 				uSAD[threadIdx.z][xy_index] += uSAD[threadIdx.z][xy_index+8];
+			}
 			__syncthreads();
 			if(xy_index < 4)
+			{
 				uSAD[threadIdx.z][xy_index] += uSAD[threadIdx.z][xy_index+4];
+			}
 			__syncthreads();
 			if(xy_index < 2)
+			{
 				uSAD[threadIdx.z][xy_index] += uSAD[threadIdx.z][xy_index+2];
+			}
 			__syncthreads();
 			if(xy_index < 1)
+			{
 				uSAD[threadIdx.z][xy_index] += uSAD[threadIdx.z][xy_index+1];
+			}
 			__syncthreads();
 			if(threadIdx.x == 0 && threadIdx.y == 0) {
 				results[(offsetY*32)+offsetX+(threadIdx.z*8)] = uSAD[threadIdx.z][0];
@@ -257,6 +281,30 @@ void cuda_me(uint8_t *original, uint8_t *reference, int stride, uint16_t *result
 			__syncthreads();
 		}
 	}
+
+	//find position of the global minimum for results
+	//first find the minimum for each row and column
+	//the global minimum will then exist among the minimums for each column and row
+	//then atominMin set the values for each row and column to globalMin
+	//if a column or row minimum is equal to globalMin, set the rowX and rowY
+	//potential faults: if there is more than 1 global minimum, the results may be wrong.
+	unsigned int globalMin;
+	__shared__ unsigned int globalMinx;
+	__shared__ unsigned int globalMiny;
+	globalMin = 65535;
+	for(int i = 0; i < mb_h; i++) {
+		int16_t current = results[(i*32*8)+(threadIdx.y*32)+(threadIdx.z*8)+threadIdx.x];
+		if(current < globalMin) {
+			atomicMin(&globalMin, current);
+		}
+		__syncthreads();
+		if(current == globalMin) {
+			globalMinx = threadIdx.z * 8 + threadIdx.x;
+			globalMiny = i*8 + threadIdx.y;
+		}
+		__syncthreads();
+	}
+	*/
 
 	for(int i = 0; i < mb_h; i++) {
 		result_block[(i*40*8)+xyz_index] = results[(i*32*8)+(threadIdx.y*32)+(threadIdx.z*8)+threadIdx.x];
