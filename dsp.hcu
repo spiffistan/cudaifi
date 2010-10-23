@@ -5,9 +5,9 @@
 
 extern "C" {
 
-	__global__ void happy_block_8x8(uint8_t *orig, uint8_t *ref, int stride, uint32_t *result_block);
-	//__global__ void happy_block_8x8_d(uint8_t *block1, uint8_t *block2, uint32_t *result_block_d, int stride);
-	//__global__ void reduce0(uint32_t *g_idata, uint32_t *g_odata, uint32_t n);
+	__global__ void cuda_me(uint8_t *original, uint8_t *reference, int stride, uint16_t *result_block, uint32_t mb_w, uint32_t mb_h, uint8_t rightEdge, uint8_t bottomEdge);
+	//__global__ void happy_block_8x8(uint8_t *orig, uint8_t *ref, int stride, uint32_t *result_block);
+
 	void print_buffer8(uint8_t* buffer, int n);
 	void print_buffer32(uint32_t* buffer, int n);
 	void catchCudaError(const char *message);
