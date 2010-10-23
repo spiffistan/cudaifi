@@ -195,20 +195,18 @@ void cuda_me(uint8_t *original, uint8_t *reference, int stride, uint16_t *result
 {
 	__shared__ uint8_t ref[LENGTH*LENGTH]; // <= (40) * (40)
 	__shared__ uint8_t orig[64];
-	__shared__ uint16_t uSAD[4][64];
 	__shared__ uint16_t results[32*32];
 	//@TODO try to read reference as a 32bit in to get coalesced values on compute 1.1
 	int xyz_index = (threadIdx.y * LENGTH) + (threadIdx.z * blockDim.x)+ threadIdx.x;
 	int res_index = (threadIdx.y*32)+(threadIdx.z*8) + threadIdx.x;
 	int ref_index = (threadIdx.y * stride) + (threadIdx.z * blockDim.x)+ threadIdx.x;
-	int xy_index = (threadIdx.y * blockDim.x) + threadIdx.x;
 	//load ref
 	for(int i = 0; i < 4; i++) {
 		ref[(i*LENGTH*8)+xyz_index] = reference[(i*blockDim.y*stride)+ref_index];
 	}
 
 
-	if(!bottomEdge) {
+	if(!bottomEdge) { //if we still got more room below, we need to read it.
 		ref[(32*LENGTH)+xyz_index] = reference[(32*stride)+ref_index];
 	}
 	if(!rightEdge) { //need to fill the gap on the right side, instead of horizontal read, we do vertical.
@@ -216,7 +214,7 @@ void cuda_me(uint8_t *original, uint8_t *reference, int stride, uint16_t *result
 	}
 	__syncthreads();
 
-	//Load orig with 64 threads, and a special case in ref with 64 more
+	//Load orig with 64 threads, and or bottomright corner if it exists
 	if(threadIdx.z == 0) {
 		orig[(threadIdx.y*blockDim.x)+threadIdx.x] = original[(threadIdx.y*stride)+threadIdx.x];
 	}
@@ -224,11 +222,8 @@ void cuda_me(uint8_t *original, uint8_t *reference, int stride, uint16_t *result
 		ref[(32*LENGTH)+32+(threadIdx.y*LENGTH)+threadIdx.x] = reference[(32*stride)+32+(threadIdx.y*stride)+threadIdx.x];
 	}
 	__syncthreads();
-	//TEST
-	for(int i = 0; i < mb_h;i++) {
-		results[(i*40*8)+xyz_index] = 0;
-	}
 
+	//compute SAD
 	for(int y = 0; y < mb_h; y++)
 	{
 		for(int i = 0; i < 8; i++)
@@ -239,72 +234,7 @@ void cuda_me(uint8_t *original, uint8_t *reference, int stride, uint16_t *result
 			}
 		}
 	}
-	/*
-	for(int offsetY = 0; offsetY < 32; offsetY++) {
-		for(int offsetX = 0; offsetX < 8; offsetX++) {
-			//uSAD[threadIdx.z][xy_index] = abs(ref[xyz_index] - orig[xy_index]); //TODO use __usad()
-			uSAD[threadIdx.z][xy_index] = 0;
-			uSAD[threadIdx.z][xy_index] = __usad(ref[(offsetY*LENGTH)+offsetX+xyz_index], orig[xy_index], uSAD[threadIdx.z][xy_index]);
-			__syncthreads();
-			if(xy_index < 32) {
-				uSAD[threadIdx.z][xy_index] += uSAD[threadIdx.z][xy_index+32];
-			}
-			__syncthreads();
-			if(xy_index < 16)
-			{
-				uSAD[threadIdx.z][xy_index] += uSAD[threadIdx.z][xy_index+16];
-			}
-			__syncthreads();
-			if(xy_index < 8)
-			{
-				uSAD[threadIdx.z][xy_index] += uSAD[threadIdx.z][xy_index+8];
-			}
-			__syncthreads();
-			if(xy_index < 4)
-			{
-				uSAD[threadIdx.z][xy_index] += uSAD[threadIdx.z][xy_index+4];
-			}
-			__syncthreads();
-			if(xy_index < 2)
-			{
-				uSAD[threadIdx.z][xy_index] += uSAD[threadIdx.z][xy_index+2];
-			}
-			__syncthreads();
-			if(xy_index < 1)
-			{
-				uSAD[threadIdx.z][xy_index] += uSAD[threadIdx.z][xy_index+1];
-			}
-			__syncthreads();
-			if(threadIdx.x == 0 && threadIdx.y == 0) {
-				results[(offsetY*32)+offsetX+(threadIdx.z*8)] = uSAD[threadIdx.z][0];
-			}
-			__syncthreads();
-		}
-	}
-
-	//find position of the global minimum for results
-	//first find the minimum for each row and column
-	//the global minimum will then exist among the minimums for each column and row
-	//then atominMin set the values for each row and column to globalMin
-	//if a column or row minimum is equal to globalMin, set the rowX and rowY
-	//potential faults: if there is more than 1 global minimum, the results may be wrong.
-	unsigned int globalMin;
-	__shared__ unsigned int globalMinx;
-	__shared__ unsigned int globalMiny;
-	globalMin = 65535;
-	for(int i = 0; i < mb_h; i++) {
-		int16_t current = results[(i*32*8)+(threadIdx.y*32)+(threadIdx.z*8)+threadIdx.x];
-		if(current < globalMin) {
-			atomicMin(&globalMin, current);
-		}
-		__syncthreads();
-		if(current == globalMin) {
-			globalMinx = threadIdx.z * 8 + threadIdx.x;
-			globalMiny = i*8 + threadIdx.y;
-		}
-		__syncthreads();
-	}
-	*/
+	__syncthreads();
 
 	for(int i = 0; i < mb_h; i++) {
 		result_block[(i*40*8)+xyz_index] = results[(i*32*8)+(threadIdx.y*32)+(threadIdx.z*8)+threadIdx.x];
