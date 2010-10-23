@@ -186,9 +186,8 @@ __constant__ int result_stride = 64;
 //meant for 512 threads
 //threadDim(8,8,4);
 
-
-
 #define LENGTH 40
+#define COMPSAD(Y,I,J) results[(Y*32*8)+res_index] = __usad(ref[(I*40)+xyz_index+J], orig[(I*8)+J], results[(Y*32*8)+res_index]);
 
 __global__
 void cuda_me(uint8_t *original, uint8_t *reference, int stride, uint16_t *result_block, uint32_t mb_w, uint32_t mb_h, uint8_t rightEdge, uint8_t bottomEdge)
@@ -224,16 +223,19 @@ void cuda_me(uint8_t *original, uint8_t *reference, int stride, uint16_t *result
 	__syncthreads();
 
 	//compute SAD
+	
 	for(int y = 0; y < mb_h; y++)
-	{
-		for(int i = 0; i < 8; i++)
-		{
-			for(int j = 0; j < 8; j++)
-			{
-				results[(y*32*8)+res_index] = __usad(ref[(i*40)+xyz_index+j], orig[(i*8)+j], results[(y*32*8)+res_index]);
-			}
-		}
+	{ 	/* i = 0..7, j = 0..7 */	
+        COMPSAD(y,0,0); COMPSAD(y,0,1); COMPSAD(y,0,2); COMPSAD(y,0,3); COMPSAD(y,0,4); COMPSAD(y,0,5); COMPSAD(y,0,6); COMPSAD(y,0,7);  
+        COMPSAD(y,1,0); COMPSAD(y,1,1); COMPSAD(y,1,2); COMPSAD(y,1,3); COMPSAD(y,1,4); COMPSAD(y,1,5); COMPSAD(y,1,6); COMPSAD(y,1,7);  
+        COMPSAD(y,2,0); COMPSAD(y,2,1); COMPSAD(y,2,2); COMPSAD(y,2,3); COMPSAD(y,2,4); COMPSAD(y,2,5); COMPSAD(y,2,6); COMPSAD(y,2,7);  
+        COMPSAD(y,3,0); COMPSAD(y,3,1); COMPSAD(y,3,2); COMPSAD(y,3,3); COMPSAD(y,3,4); COMPSAD(y,3,5); COMPSAD(y,3,6); COMPSAD(y,3,7);  
+        COMPSAD(y,4,0); COMPSAD(y,4,1); COMPSAD(y,4,2); COMPSAD(y,4,3); COMPSAD(y,4,4); COMPSAD(y,4,5); COMPSAD(y,4,6); COMPSAD(y,4,7);  
+        COMPSAD(y,5,0); COMPSAD(y,5,1); COMPSAD(y,5,2); COMPSAD(y,5,3); COMPSAD(y,5,4); COMPSAD(y,5,5); COMPSAD(y,5,6); COMPSAD(y,5,7);  
+        COMPSAD(y,6,0); COMPSAD(y,6,1); COMPSAD(y,6,2); COMPSAD(y,6,3); COMPSAD(y,6,4); COMPSAD(y,6,5); COMPSAD(y,6,6); COMPSAD(y,6,7);  
+        COMPSAD(y,7,0); COMPSAD(y,7,1); COMPSAD(y,7,2); COMPSAD(y,7,3); COMPSAD(y,7,4); COMPSAD(y,7,5); COMPSAD(y,7,6); COMPSAD(y,7,7);  
 	}
+	
 	__syncthreads();
 
 	for(int i = 0; i < mb_h; i++) {
