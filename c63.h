@@ -111,7 +111,8 @@ uint16_t get_bits(struct entropy_ctx *c, uint8_t n);
 
 void dct_quant_block_8x8(int16_t *in_data, int16_t *out_data, uint8_t *quant_tbl);
 void dequant_idct_block_8x8(int16_t *in_data, int16_t *out_data, uint8_t *quant_tbl);
-void sad_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result);
+//void sad_block_8x8(uint8_t *block1, uint8_t *block2, int stride, int *result);
+//static void pre_me_block_8x8(struct c63_common *cm, int mb_x, int mb_y, uint8_t *orig, uint8_t *ref, int cc);
 
 void write_frame(struct c63_common *cm);
 void dequantize_idct(int16_t *in_data, uint8_t *prediction, uint32_t width, uint32_t height,
