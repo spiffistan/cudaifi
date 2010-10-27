@@ -179,8 +179,8 @@ void load_ref(uint8_t *host_ptr, uint8_t* dev_ptr, size_t width, size_t height, 
 #define MY (blockIdx.y * 8)
 #define RANGE 16
 
-__shared__ uint8_t ref[LENGTH * LENGTH]; // <= (40) * (40)
-__shared__ uint8_t orig[64];
+__shared__ uint32_t ref[LENGTH * LENGTH]; // <= (40) * (40)
+__shared__ uint32_t orig[64];
 __shared__ min_helper minimum[32 * 32];
 
 __device__
@@ -188,7 +188,7 @@ inline void load_texture_values(int left, int top, int ref_index) {
 	ref[ref_index] = tex2D(tex_ref, left + threadIdx.x, top + threadIdx.y);
 	ref[16 * 40 + ref_index] = tex2D(tex_ref, left + threadIdx.x, top + 16 + threadIdx.y);
 
-	if (threadIdx.y < 8) {
+	if (threadIdx.y < 8) { //TODO Fix warp serialization
 		//load vertically the blocks to the right
 		ref[threadIdx.x * 40 + 32 + threadIdx.y] = tex2D(tex_ref, left + 32 + threadIdx.y, top + threadIdx.x);
 	} else {
@@ -313,10 +313,10 @@ __global__ void cuda_me_texture(int width, int height, macroblock * mb) {
 			top = 0;
 		}
 		if (right > (width - 8)) { //increase search area towards the left if we're out of bounds
-			left -= 8;
+			left += (width-8) - right;
 		}
 		if (bottom > (height - 8)) { //increase search area towards the top if we're out of bounds
-			top -= 8;
+			top += (height - 8) - bottom;
 		}
 	}
 	int res_index = threadIdx.y * 32 + threadIdx.x;
