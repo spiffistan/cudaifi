@@ -221,18 +221,6 @@ inline void calculate_usad(int res_index, int ref_index) {
             minimum[16 * 32 + res_index].value = __usad(ref[(16 * 40) + ref_index + j * 40 + i], orig[j * 8 + i], minimum[16 * 32 + res_index].value);
         }
     }
-
-
-//    // Manual unrolling
-//    COMPSAD(0,0); COMPSAD(0,1); COMPSAD(0,2); COMPSAD(0,3); COMPSAD(0,4); COMPSAD(0,5); COMPSAD(0,6); COMPSAD(0,7);
-//    COMPSAD(1,0); COMPSAD(1,1); COMPSAD(1,2); COMPSAD(1,3); COMPSAD(1,4); COMPSAD(1,5); COMPSAD(1,6); COMPSAD(1,7);
-//    COMPSAD(2,0); COMPSAD(2,1); COMPSAD(2,2); COMPSAD(2,3); COMPSAD(2,4); COMPSAD(2,5); COMPSAD(2,6); COMPSAD(2,7);
-//    COMPSAD(3,0); COMPSAD(3,1); COMPSAD(3,2); COMPSAD(3,3); COMPSAD(3,4); COMPSAD(3,5); COMPSAD(3,6); COMPSAD(3,7);
-//    COMPSAD(4,0); COMPSAD(4,1); COMPSAD(4,2); COMPSAD(4,3); COMPSAD(4,4); COMPSAD(4,5); COMPSAD(4,6); COMPSAD(4,7);
-//    COMPSAD(5,0); COMPSAD(5,1); COMPSAD(5,2); COMPSAD(5,3); COMPSAD(5,4); COMPSAD(5,5); COMPSAD(5,6); COMPSAD(5,7);
-//    COMPSAD(6,0); COMPSAD(6,1); COMPSAD(6,2); COMPSAD(6,3); COMPSAD(6,4); COMPSAD(6,5); COMPSAD(6,6); COMPSAD(6,7);
-//    COMPSAD(7,0); COMPSAD(7,1); COMPSAD(7,2); COMPSAD(7,3); COMPSAD(7,4); COMPSAD(7,5); COMPSAD(7,6); COMPSAD(7,7);
-    
     __syncthreads();
 }
 __device__
@@ -250,6 +238,9 @@ inline void setup_min(int res_index)
 
 #define MIN2(m1,m2) (m1.value) < (m2.value) ? (m1) : (m2);
 #define COMPMINSYNC(idx) minimum[res_index] = MIN2(minimum[res_index], minimum[(idx)]); __syncthreads();
+#define COMPMIN(idx) minimum[res_index] = MIN2(minimum[res_index], minimum[(idx)]);
+
+
 __device__
 inline void reduce_min(int res_index)
 {    
@@ -258,13 +249,13 @@ inline void reduce_min(int res_index)
     if (threadIdx.y <  8) COMPMINSYNC(8 * 32 + res_index); // reduce to 1 block_row
     if (threadIdx.y <  4) COMPMINSYNC(4 * 32 + res_index); // reduce to 4 rows
     if (threadIdx.y <  2) COMPMINSYNC(2 * 32 + res_index); // reduce to 2 rows
-    if (threadIdx.y == 0) COMPMINSYNC(1 * 32 + res_index); // reduce to 1 row
-    
-    if (threadIdx.y == 0 && threadIdx.x < 16) COMPMINSYNC(16 + res_index);  // reduce to 16 values
-    if (threadIdx.y == 0 && threadIdx.x <  8) COMPMINSYNC(8  + res_index);  // reduce to 8 values
-    if (threadIdx.y == 0 && threadIdx.x <  4) COMPMINSYNC(4  + res_index);  // reduce to 4 values
-    if (threadIdx.y == 0 && threadIdx.x <  2) COMPMINSYNC(2  + res_index);  // reduce to 2 values
-    if (threadIdx.y == 0 && threadIdx.x == 0) COMPMINSYNC(1);               // reduce to 1 value
+
+    if (threadIdx.y == 0) COMPMIN(32 + res_index); // reduce to 1 row, no need to sync anymore, only 1 warp
+    if (threadIdx.y == 0 && threadIdx.x < 16) COMPMIN(16 + res_index);  // reduce to 16 values
+    if (threadIdx.y == 0 && threadIdx.x <  8) COMPMIN(8  + res_index);  // reduce to 8 values
+    if (threadIdx.y == 0 && threadIdx.x <  4) COMPMIN(4  + res_index);  // reduce to 4 values
+    if (threadIdx.y == 0 && threadIdx.x <  2) COMPMIN(2  + res_index);  // reduce to 2 values
+    if (threadIdx.y == 0 && threadIdx.x == 0) COMPMIN(1);               // reduce to 1 value
 }
 
 __global__ 
@@ -283,14 +274,13 @@ void cuda_me_texture(int width, int height, macroblock * mb)
         top = 0;
     
     if (right > (width - 8)) // Increase search area towards the left if we're out of bounds
-        left += (width-8) - right;
+        left += (width - 8) - right;
         
     if (bottom > (height - 8)) // Increase search area towards the top if we're out of bounds
         top += (height - 8) - bottom;
     
     int res_index = threadIdx.y * 32 + threadIdx.x;
     int ref_index = threadIdx.y * 40 + threadIdx.x;
-    
     load_texture_values(left, top, ref_index);
     setup_min(res_index);
     calculate_usad(res_index, ref_index);
