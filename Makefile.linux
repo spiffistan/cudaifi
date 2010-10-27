@@ -4,8 +4,8 @@ CUDA_INSTALL_PATH := /usr/local/cuda
 CUDA_SDK_PATH     := ~/GPU\ Computing/C
 INCLUDES          += -I. -I$(CUDA_INSTALL_PATH)/include -I$(CUDA_SDK_PATH)/common/inc
 LIBS              := -L$(CUDA_INSTALL_PATH)/lib -L$(CUDA_SDK_PATH)/lib
-CFLAGS            := 
-NVCFLAGS          := -G -g
+CFLAGS            := -O3 
+NVCFLAGS          := -O3 -maxrregcount 16 --ptxas-options=-v -pg 
 LDFLAGS           := -lm -lcuda
 NVCC              := nvcc  
 CC                := gcc 
