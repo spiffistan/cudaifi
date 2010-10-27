@@ -1,16 +1,9 @@
 static void dct_quantize(uint8_t *in_data, uint32_t width, uint32_t height,
         int16_t *out_data, uint32_t padwidth,
         uint32_t padheight, uint8_t *quantization)
-{	
+{
     int y,x,u,v,j,i;
 
-	__m128 coeff, cos4, cos1; 
-	__m128i tmp128i;
-	__m64 tmp64;
-	const __m128 SUB128 = { 128.0f, 128.0f, 128.0f, 128.0f };
-	
-	float dctpart[4] __attribute((aligned(16)));
-	
     /* Perform the DCT and quantization */
     for(y = 0; y < height; y += 8)
     {
@@ -24,39 +17,20 @@ static void dct_quantize(uint8_t *in_data, uint32_t width, uint32_t height,
 
             //Loop through all elements of the block
             for(u = 0; u < 8; ++u)
-            {	
+            {
                 for(v = 0; v < 8; ++v)
                 {
                     /* Compute the DCT */
-					__m128 dct_;
-					
-					dct_ = _mm_setzero_ps();
-					
-                    for(j = 0; j < jj; ++j) {
-	
-						const int c = (y+j)*width+x;
-						
-						cos1 = _mm_load_ps1(&cos_table[(v*8)+j]);
-
-                        for(i = 0; i < ii; i+=4)
-                        { 	
-							tmp128i = _mm_lddqu_si128((__m128i *) &in_data[(c+i)]); // SSE3
-							tmp64 = _mm_movepi64_pi64(tmp128i);	
-							coeff = _mm_cvtpu8_ps(tmp64);
-							coeff = _mm_sub_ps(coeff, SUB128);
-							cos4 = _mm_load_ps(&cos_table[(u*8)+i]);
-							coeff = _mm_mul_ps(coeff, cos4);
-							coeff = _mm_mul_ps(coeff, cos1);							                
-							dct_ = _mm_add_ps(coeff, dct_);
+                    float dct = 0;
+                    for(j = 0; j < jj; ++j)
+                        for(i = 0; i < ii; ++i)
+                        {
+                            float coeff = in_data[(y+j)*width+(x+i)] - 128.0f;
+                            dct += coeff * (float) (cos((2*i+1)*u*PI/16.0f) * cos((2*j+1)*v*PI/16.0f));
                         }
-					}
-					
-                    float a1 = !u ? ISQRT2 : 1.0f;
-                    float a2 = !v ? ISQRT2 : 1.0f; 
 
-					_mm_store_ps(dctpart, dct_);
-					
-					float dct = dctpart[0] + dctpart[1] + dctpart[2] + dctpart[3];
+                    float a1 = !u ? ISQRT2 : 1.0f;
+                    float a2 = !v ? ISQRT2 : 1.0f;
 
                     /* Scale according to normalizing function */
                     dct *= a1*a2/4.0f;
