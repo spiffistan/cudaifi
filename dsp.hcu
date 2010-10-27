@@ -2,15 +2,24 @@
 #define DSP_HCU_
 #include <inttypes.h>
 #include <stdint.h>
-
 extern "C" {
+#include "c63.h"
 
-	__global__ void cuda_me(uint8_t *original, uint8_t *reference, int stride, uint16_t *result_block, uint32_t mb_w, uint32_t mb_h, uint8_t rightEdge, uint8_t bottomEdge);
-	//__global__ void happy_block_8x8(uint8_t *orig, uint8_t *ref, int stride, uint32_t *result_block);
+struct min_helper {
+	uint16_t value;
+	int8_t x;
+	int8_t y;
+};
 
-	void print_buffer8(uint8_t* buffer, int n);
-	void print_buffer32(uint32_t* buffer, int n);
-	void catchCudaError(const char *message);
+__global__ void cuda_me_texture(int width, int height, macroblock * mb);
+__global__ void empty_kernel(void);
+
+void load_orig(uint8_t *host_ptr, uint8_t* dev_ptr, size_t width, size_t height, size_t pitch);
+void load_ref(uint8_t *host_ptr, uint8_t* dev_ptr, size_t width, size_t height, size_t pitch);
+
+void print_buffer8(uint8_t* buffer, int n);
+void print_buffer32(uint32_t* buffer, int n);
+void catchCudaError(const char *message);
 
 }
 #endif /* DSP_HCU_ */
