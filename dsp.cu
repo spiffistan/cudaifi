@@ -173,11 +173,6 @@ void load_ref(uint8_t *host_ptr, uint8_t* dev_ptr, size_t width, size_t height, 
 //meant for 512 threads
 //threadDim(8,8,4);
 
-<<<<<<< HEAD
-#define LENGTH 40
-#define COMPSAD(Y,I,J) results[(Y*32*8)+res_index] = __usad(ref[(I*40)+xyz_index+J], orig[(I*8)+J], results[(Y*32*8)+res_index]);
-=======
-
 #define LENGTH 40
 #define MX (blockIdx.x * 8)
 #define MY (blockIdx.y * 8)
@@ -186,62 +181,10 @@ void load_ref(uint8_t *host_ptr, uint8_t* dev_ptr, size_t width, size_t height, 
 __shared__ uint32_t ref[LENGTH * LENGTH]; // <= (40) * (40)
 __shared__ uint32_t orig[64];
 __shared__ min_helper minimum[32 * 32];
->>>>>>> test
 
 __device__
 inline void load_texture_values(int left, int top, int ref_index) 
 {
-<<<<<<< HEAD
-	__shared__ uint8_t ref[LENGTH*LENGTH]; // <= (40) * (40)
-	__shared__ uint8_t orig[64];
-	__shared__ uint16_t results[32*32];
-	//@TODO try to read reference as a 32bit in to get coalesced values on compute 1.1
-	int xyz_index = (threadIdx.y * LENGTH) + (threadIdx.z * blockDim.x)+ threadIdx.x;
-	int res_index = (threadIdx.y*32)+(threadIdx.z*8) + threadIdx.x;
-	int ref_index = (threadIdx.y * stride) + (threadIdx.z * blockDim.x)+ threadIdx.x;
-	//load ref
-	for(int i = 0; i < 4; i++) {
-		ref[(i*LENGTH*8)+xyz_index] = reference[(i*blockDim.y*stride)+ref_index];
-	}
-
-
-	if(!bottomEdge) { //if we still got more room below, we need to read it.
-		ref[(32*LENGTH)+xyz_index] = reference[(32*stride)+ref_index];
-	}
-	if(!rightEdge) { //need to fill the gap on the right side, instead of horizontal read, we do vertical.
-		ref[(threadIdx.z * LENGTH * 8)+(threadIdx.y * LENGTH)+32+threadIdx.x] = reference[(threadIdx.z*8*stride)+(stride*threadIdx.y)+(32+threadIdx.x)];
-	}
-	__syncthreads();
-
-	//Load orig with 64 threads, and or bottomright corner if it exists
-	if(threadIdx.z == 0) {
-		orig[(threadIdx.y*blockDim.x)+threadIdx.x] = original[(threadIdx.y*stride)+threadIdx.x];
-	}
-	else if(threadIdx.z == 1 && !bottomEdge && !rightEdge) {
-		ref[(32*LENGTH)+32+(threadIdx.y*LENGTH)+threadIdx.x] = reference[(32*stride)+32+(threadIdx.y*stride)+threadIdx.x];
-	}
-	__syncthreads();
-
-	//compute SAD
-	
-	for(int y = 0; y < mb_h; y++)
-	{ 	/* i = 0..7, j = 0..7 */	
-        COMPSAD(y,0,0); COMPSAD(y,0,1); COMPSAD(y,0,2); COMPSAD(y,0,3); COMPSAD(y,0,4); COMPSAD(y,0,5); COMPSAD(y,0,6); COMPSAD(y,0,7);  
-        COMPSAD(y,1,0); COMPSAD(y,1,1); COMPSAD(y,1,2); COMPSAD(y,1,3); COMPSAD(y,1,4); COMPSAD(y,1,5); COMPSAD(y,1,6); COMPSAD(y,1,7);  
-        COMPSAD(y,2,0); COMPSAD(y,2,1); COMPSAD(y,2,2); COMPSAD(y,2,3); COMPSAD(y,2,4); COMPSAD(y,2,5); COMPSAD(y,2,6); COMPSAD(y,2,7);  
-        COMPSAD(y,3,0); COMPSAD(y,3,1); COMPSAD(y,3,2); COMPSAD(y,3,3); COMPSAD(y,3,4); COMPSAD(y,3,5); COMPSAD(y,3,6); COMPSAD(y,3,7);  
-        COMPSAD(y,4,0); COMPSAD(y,4,1); COMPSAD(y,4,2); COMPSAD(y,4,3); COMPSAD(y,4,4); COMPSAD(y,4,5); COMPSAD(y,4,6); COMPSAD(y,4,7);  
-        COMPSAD(y,5,0); COMPSAD(y,5,1); COMPSAD(y,5,2); COMPSAD(y,5,3); COMPSAD(y,5,4); COMPSAD(y,5,5); COMPSAD(y,5,6); COMPSAD(y,5,7);  
-        COMPSAD(y,6,0); COMPSAD(y,6,1); COMPSAD(y,6,2); COMPSAD(y,6,3); COMPSAD(y,6,4); COMPSAD(y,6,5); COMPSAD(y,6,6); COMPSAD(y,6,7);  
-        COMPSAD(y,7,0); COMPSAD(y,7,1); COMPSAD(y,7,2); COMPSAD(y,7,3); COMPSAD(y,7,4); COMPSAD(y,7,5); COMPSAD(y,7,6); COMPSAD(y,7,7);  
-	}
-	
-	__syncthreads();
-
-	for(int i = 0; i < mb_h; i++) {
-		result_block[(i*40*8)+xyz_index] = results[(i*32*8)+(threadIdx.y*32)+(threadIdx.z*8)+threadIdx.x];
-	}
-=======
     ref[ref_index] = tex2D(tex_ref, left + threadIdx.x, top + threadIdx.y);
     ref[16 * 40 + ref_index] = tex2D(tex_ref, left + threadIdx.x, top + 16 + threadIdx.y);
 
@@ -258,7 +201,6 @@ inline void load_texture_values(int left, int top, int ref_index)
         orig[threadIdx.y * 8 + threadIdx.x] = tex2D(tex_orig, MX + threadIdx.x, MY + threadIdx.y);
     }
     __syncthreads();
->>>>>>> test
 }
 
 #define COMPSAD(i,j); \
@@ -267,7 +209,7 @@ inline void load_texture_values(int left, int top, int ref_index)
 
 __device__
 inline void calculate_usad(int res_index, int ref_index) {
-    /*    
+
     for (int j = 0; j < 8; j++) {
         for (int i = 0; i < 8; i++) {
             minimum[res_index].value = __usad(ref[ref_index + j * 40 + i], orig[j * 8 + i], minimum[res_index].value);
@@ -279,30 +221,20 @@ inline void calculate_usad(int res_index, int ref_index) {
             minimum[16 * 32 + res_index].value = __usad(ref[(16 * 40) + ref_index + j * 40 + i], orig[j * 8 + i], minimum[16 * 32 + res_index].value);
         }
     }
-    */
 
-    // Manual unrolling	
-    COMPSAD(0,0); COMPSAD(0,1); COMPSAD(0,2); COMPSAD(0,3); COMPSAD(0,4); COMPSAD(0,5); COMPSAD(0,6); COMPSAD(0,7);
-    COMPSAD(1,0); COMPSAD(1,1); COMPSAD(1,2); COMPSAD(1,3); COMPSAD(1,4); COMPSAD(1,5); COMPSAD(1,6); COMPSAD(1,7);
-    COMPSAD(2,0); COMPSAD(2,1); COMPSAD(2,2); COMPSAD(2,3); COMPSAD(2,4); COMPSAD(2,5); COMPSAD(2,6); COMPSAD(2,7);
-    COMPSAD(3,0); COMPSAD(3,1); COMPSAD(3,2); COMPSAD(3,3); COMPSAD(3,4); COMPSAD(3,5); COMPSAD(3,6); COMPSAD(3,7);
-    COMPSAD(4,0); COMPSAD(4,1); COMPSAD(4,2); COMPSAD(4,3); COMPSAD(4,4); COMPSAD(4,5); COMPSAD(4,6); COMPSAD(4,7);
-    COMPSAD(5,0); COMPSAD(5,1); COMPSAD(5,2); COMPSAD(5,3); COMPSAD(5,4); COMPSAD(5,5); COMPSAD(5,6); COMPSAD(5,7);
-    COMPSAD(6,0); COMPSAD(6,1); COMPSAD(6,2); COMPSAD(6,3); COMPSAD(6,4); COMPSAD(6,5); COMPSAD(6,6); COMPSAD(6,7);
-    COMPSAD(7,0); COMPSAD(7,1); COMPSAD(7,2); COMPSAD(7,3); COMPSAD(7,4); COMPSAD(7,5); COMPSAD(7,6); COMPSAD(7,7);
+
+//    // Manual unrolling
+//    COMPSAD(0,0); COMPSAD(0,1); COMPSAD(0,2); COMPSAD(0,3); COMPSAD(0,4); COMPSAD(0,5); COMPSAD(0,6); COMPSAD(0,7);
+//    COMPSAD(1,0); COMPSAD(1,1); COMPSAD(1,2); COMPSAD(1,3); COMPSAD(1,4); COMPSAD(1,5); COMPSAD(1,6); COMPSAD(1,7);
+//    COMPSAD(2,0); COMPSAD(2,1); COMPSAD(2,2); COMPSAD(2,3); COMPSAD(2,4); COMPSAD(2,5); COMPSAD(2,6); COMPSAD(2,7);
+//    COMPSAD(3,0); COMPSAD(3,1); COMPSAD(3,2); COMPSAD(3,3); COMPSAD(3,4); COMPSAD(3,5); COMPSAD(3,6); COMPSAD(3,7);
+//    COMPSAD(4,0); COMPSAD(4,1); COMPSAD(4,2); COMPSAD(4,3); COMPSAD(4,4); COMPSAD(4,5); COMPSAD(4,6); COMPSAD(4,7);
+//    COMPSAD(5,0); COMPSAD(5,1); COMPSAD(5,2); COMPSAD(5,3); COMPSAD(5,4); COMPSAD(5,5); COMPSAD(5,6); COMPSAD(5,7);
+//    COMPSAD(6,0); COMPSAD(6,1); COMPSAD(6,2); COMPSAD(6,3); COMPSAD(6,4); COMPSAD(6,5); COMPSAD(6,6); COMPSAD(6,7);
+//    COMPSAD(7,0); COMPSAD(7,1); COMPSAD(7,2); COMPSAD(7,3); COMPSAD(7,4); COMPSAD(7,5); COMPSAD(7,6); COMPSAD(7,7);
     
     __syncthreads();
 }
-/*
-__device__
-inline min_helper min_swap(min_helper m1, min_helper m2) {
-    if (m1.value < m2.value) {
-        return m1;
-    } else {
-        return m2;
-    }
-}*/
-
 __device__
 inline void setup_min(int res_index)
 {
