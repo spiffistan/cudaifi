@@ -7,11 +7,9 @@
 #include <math.h>
 #include <assert.h>
 #include <limits.h>
+#include "c63.h"
 #include "me.hcu"
 #include "dsp.hcu"
-#include "c63.h"
-#include "precode_me.c"
-
 extern "C" {
 
 /* Motion estimation for 8x8 block */
@@ -53,102 +51,66 @@ void printResult(uint16_t *results, int width, int height, int result_stride) {
 
 extern "C" void c63_motion_estimate(struct c63_common *cm) {
 	/* Compare this frame with previous reconstructed frame */
-	uint8_t *image_orig, *image_ref;
-	int size = cm->width * cm->height;
-	macroblock *mb_dev, *mb_host;
-	cudaMalloc((void**) &image_orig, size * sizeof(uint8_t));
-	cudaMalloc((void**) &image_ref, size * sizeof(uint8_t));
+	uint8_t *image_orig_Y, *image_ref_Y;
+	uint8_t *image_orig_U, *image_ref_U;
+	uint8_t *image_orig_V, *image_ref_V;
+
+	size_t pitch_orig_Y, pitch_ref_Y;
+	size_t pitch_orig_U, pitch_ref_U;
+	size_t pitch_orig_V, pitch_ref_V;
+
+	macroblock *mb_dev;
+
+	//MALLOCS
+	cudaMallocPitch((void**) &image_orig_Y, &pitch_orig_Y, cm->width, cm->height);
+	cudaMallocPitch((void**) &image_ref_Y, &pitch_ref_Y, cm->width, cm->height);
+	cudaMallocPitch((void**) &image_orig_U, &pitch_orig_U, cm->width / 2, cm->height) / 2;
+	cudaMallocPitch((void**) &image_ref_U, &pitch_ref_U, cm->width / 2, cm->height / 2);
+	cudaMallocPitch((void**) &image_orig_V, &pitch_orig_V, cm->width / 2, cm->height / 2);
+	cudaMallocPitch((void**) &image_ref_V, &pitch_ref_V, cm->width / 2, cm->height / 2);
 	cudaMalloc((void**) &mb_dev, cm->mb_cols * cm->mb_rows * sizeof(*mb_dev));
-	mb_host = (macroblock*) malloc(cm->mb_cols * cm->mb_rows * sizeof(*mb_dev));
+	catchCudaError("MALLOC TEST");
+
 	// Luma
-	cudaMemcpy(image_orig, cm->curframe->orig->Y, size * sizeof(uint8_t), cudaMemcpyHostToDevice);
-	cudaMemcpy(image_ref, cm->refframe->recons->Y, size * sizeof(uint8_t), cudaMemcpyHostToDevice);
-	dim3 thread_dim(8, 8, 4);
+	dim3 thread_dim(32, 16, 1);
 	dim3 block_dim(cm->mb_cols, cm->mb_rows, 1);
-	//TEST
-	min_helper *test_dev, *test_host;
-	uint16_t *test;
-	cudaMalloc((void**) &test_dev, 32 * 32 * sizeof(*test_dev));
-	test = (uint16_t*) malloc(32 * 32 * sizeof(*test));
-	test_host = (min_helper*) malloc(32 * 32 * sizeof(*test_host));
-	uint16_t best_sad;
-	cuda_me2<<<block_dim, thread_dim>>>(image_orig, image_ref, cm->width,mb_dev, test_dev);
 
-//	cudaMemcpy(test_host, test_dev, 32 * 32 * sizeof(*test_dev), cudaMemcpyDeviceToHost);
-//	pre_me_block_8x8(cm, 0, 135, cm->curframe->orig->Y, cm->refframe->recons->Y, 0, test, &best_sad);
-//
-//	printf("best was: %d\n", best_sad);
-//	for (int i = 0; i < 32; i++) {
-//		for (int j = 0; j < 32; j++) {
-//			int x_start = 0;
-//			int y_start = 16;
-//			min_helper dev = test_host[i * 32 + j];
-//			uint16_t orig = test[i * 32 + j];
-//			macroblock block = cm->curframe->mbs[0][135 * cm->mb_cols + 0];
-//			printf("cuda (%d,%d)->%d, ref (%d,%d)->%d\n", x_start + dev.x, y_start + dev.y, dev.value, j, i, orig);
-//		}
-//	}
-//	exit(-1);
-//
-//	cudaMemcpy(mb_host, mb_dev, cm->mb_cols * cm->mb_rows * sizeof(*mb_dev), cudaMemcpyDeviceToHost);
-//	int mb_x, mb_y;
-//
-//	// Luma
-//
-//	for (mb_y = 0; mb_y < cm->mb_rows; ++mb_y) {
-//		for (mb_x = 0; mb_x < cm->mb_cols; ++mb_x) {
-//			pre_me_block_8x8(cm, mb_x, mb_y, cm->curframe->orig->Y, cm->refframe->recons->Y, 0, test, &best_sad);
-//			int ix = mb_y * cm->mb_cols + mb_x;
-//			if (mb_host[ix].mv_x != cm->curframe->mbs[0][ix].mv_x || mb_host[ix].mv_y != cm->curframe->mbs[0][ix].mv_y) {
-//				int start_x;
-//				if(mb_x == 0) {
-//					start_x = 0;
-//				} else if(mb_x == 1)
-//				{
-//					start_x = 8;
-//				} else {
-//					start_x = 16;
-//				}
-//				int start_y;
-//				if(mb_y == 0) {
-//					start_y = 0;
-//				} else if(mb_y == 1)
-//				{
-//					start_y = 8;
-//				} else {
-//					start_y = 16;
-//				}
-//
-//				int cu_ix = (start_y + mb_host[ix].mv_y) * 32 + start_x + mb_host[ix].mv_x;
-//				int re_ix = (start_y + cm->curframe->mbs[0][ix].mv_y) * 32 + start_x + cm->curframe->mbs[0][ix].mv_x;
-//				int cu_sad = test[cu_ix];
-//				int re_sad = test[re_ix];
-//				if(cu_sad != re_sad)
-//				printf("(%d,%d) = cuda (%d,%d)->%d, pre (%d,%d)->%d\n", mb_x, mb_y, mb_host[ix].mv_x, mb_host[ix].mv_y, cu_sad, cm->curframe->mbs[0][ix].mv_x, cm->curframe->mbs[0][ix].mv_y,re_sad);
-//			}
-//		}
-//	}
-	 cudaMemcpy(cm->curframe->mbs[0], mb_dev, cm->mb_cols*cm->mb_rows*sizeof(*mb_dev), cudaMemcpyDeviceToHost);
-	 // Chroma
-	 cudaMemcpy(image_orig, cm->curframe->orig->U, size/4 * sizeof(uint8_t), cudaMemcpyHostToDevice);
-	 cudaMemcpy(image_ref, cm->refframe->recons->U, size/4 * sizeof(uint8_t), cudaMemcpyHostToDevice);
+	load_orig(cm->curframe->orig->Y, image_orig_Y, cm->width, cm->height, pitch_orig_Y);
+	load_ref(cm->refframe->recons->Y, image_ref_Y, cm->width, cm->height, pitch_ref_Y);
+	catchCudaError("TEXTURES");
 
-	 dim3 block_dim_chroma(cm->mb_cols / 2, cm->mb_rows / 2,1);
-	 cuda_me2<<<block_dim_chroma, thread_dim>>>(image_orig, image_ref, cm->width/2,mb_dev,test_dev);
-	 cudaMemcpy(cm->curframe->mbs[1], mb_dev, cm->mb_cols*cm->mb_rows/4*sizeof(*mb_dev), cudaMemcpyDeviceToHost);
+	cuda_me_texture<<<block_dim, thread_dim>>>(cm->width, cm->height, mb_dev);
+	catchCudaError("RUN");
+	cudaMemcpy(cm->curframe->mbs[0], mb_dev, cm->mb_cols * cm->mb_rows * sizeof(*mb_dev), cudaMemcpyDeviceToHost);
 
-	 cudaMemcpy(image_orig, cm->curframe->orig->V, size/4 * sizeof(uint8_t), cudaMemcpyHostToDevice);
-	 cudaMemcpy(image_ref, cm->refframe->recons->V, size/4 * sizeof(uint8_t), cudaMemcpyHostToDevice);
-	 cuda_me2<<<block_dim_chroma, thread_dim>>>(image_orig, image_ref, cm->width/2,mb_dev,test_dev);
+	// Chroma
+	dim3 block_dim_chroma(cm->mb_cols / 2, cm->mb_rows / 2, 1);
 
-	 cudaMemcpy(cm->curframe->mbs[2], mb_dev, cm->mb_cols*cm->mb_rows/4*sizeof(*mb_dev), cudaMemcpyDeviceToHost);
+	//V
+	load_orig(cm->curframe->orig->U, image_orig_U, cm->upw, cm->uph, pitch_orig_U);
+	load_ref(cm->refframe->recons->U, image_ref_U, cm->upw, cm->uph, pitch_ref_U);
+	catchCudaError("TEXTURE");
 
-	cudaFree(image_orig);
-	cudaFree(image_ref);
+	cuda_me_texture<<<block_dim_chroma, thread_dim>>>(cm->upw, cm->uph, mb_dev);
+
+	cudaMemcpy(cm->curframe->mbs[1], mb_dev, cm->mb_cols * cm->mb_rows / 4 * sizeof(*mb_dev), cudaMemcpyDeviceToHost);
+
+	//U
+	load_orig(cm->curframe->orig->V, image_orig_V, cm->vpw, cm->vph, pitch_orig_V);
+	load_ref(cm->refframe->recons->V, image_ref_V, cm->vpw, cm->vph, pitch_ref_V);
+	catchCudaError("TEXTURE");
+
+	cuda_me_texture<<<block_dim_chroma, thread_dim>>>(cm->vpw, cm->vph, mb_dev);
+
+	cudaMemcpy(cm->curframe->mbs[2], mb_dev, cm->mb_cols * cm->mb_rows / 4 * sizeof(*mb_dev), cudaMemcpyDeviceToHost);
+
+	cudaFree(image_orig_Y);
+	cudaFree(image_ref_Y);
+	cudaFree(image_orig_U);
+	cudaFree(image_ref_U);
+	cudaFree(image_orig_V);
+	cudaFree(image_ref_V);
 	cudaFree(mb_dev);
-	cudaFree(mb_host);
-	free(test);
-	free(test_host);
 }
 
 /* Motion compensation for 8x8 block */
