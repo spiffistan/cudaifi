@@ -113,7 +113,6 @@ struct frame* create_frame(struct c63_common *cm, yuv_t *image)
     struct frame *f = malloc(sizeof(struct frame));
 
     f->orig = image;
-
     f->recons = malloc(sizeof(yuv_t));
     f->recons->Y = malloc(cm->ypw * cm->yph);
     f->recons->U = malloc(cm->upw * cm->uph);

@@ -279,6 +279,7 @@ void cuda_me_texture(int width, int height, macroblock * mb)
     if (bottom > (height - 8)) // Increase search area towards the top if we're out of bounds
         top += (height - 8) - bottom;
     
+
     int res_index = threadIdx.y * 32 + threadIdx.x;
     int ref_index = threadIdx.y * 40 + threadIdx.x;
     load_texture_values(left, top, ref_index);
