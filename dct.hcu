@@ -1,0 +1,6 @@
+#ifndef DCT_HCU_
+#define DCT_HCU_
+
+void dct_quantize_frame(struct c63_common *cm);
+
+#endif /* DCT_HCU_ */
