@@ -47,7 +47,8 @@ static void idct_1d(float *in_data, float *out_data) {
     }
 }
 
-static void scale_block(float *in_data, float *out_data) {
+static void scale_block(float *in_data, float *out_data)
+{
     int u, v;
 
     for (v = 0; v < 8; ++v) {
@@ -61,7 +62,8 @@ static void scale_block(float *in_data, float *out_data) {
     }
 }
 
-static void quantize_block(float *in_data, float *out_data, uint8_t *quant_tbl) {
+static void quantize_block(float *in_data, float *out_data, uint8_t *quant_tbl) 
+{
     int zigzag;
     for (zigzag = 0; zigzag < 64; ++zigzag) {
         uint8_t u = zigzag_U[zigzag];
@@ -74,7 +76,8 @@ static void quantize_block(float *in_data, float *out_data, uint8_t *quant_tbl) 
     }
 }
 
-static void dequantize_block(float *in_data, float *out_data, uint8_t *quant_tbl) {
+static void dequantize_block(float *in_data, float *out_data, uint8_t *quant_tbl) 
+{
     int zigzag;
     for (zigzag = 0; zigzag < 64; ++zigzag) {
         uint8_t u = zigzag_U[zigzag];
@@ -87,7 +90,8 @@ static void dequantize_block(float *in_data, float *out_data, uint8_t *quant_tbl
     }
 }
 
-void dct_quant_block_8x8(int16_t *in_data, int16_t *out_data, uint8_t *quant_tbl) {
+void dct_quant_block_8x8(int16_t *in_data, int16_t *out_data, uint8_t *quant_tbl) 
+{
     float mb[8 * 8] __attribute((aligned(16)));
     float mb2[8 * 8] __attribute((aligned(16)));
 
@@ -114,7 +118,8 @@ void dct_quant_block_8x8(int16_t *in_data, int16_t *out_data, uint8_t *quant_tbl
         out_data[i] = mb2[i];
 }
 
-void dequant_idct_block_8x8(int16_t *in_data, int16_t *out_data, uint8_t *quant_tbl) {
+void dequant_idct_block_8x8(int16_t *in_data, int16_t *out_data, uint8_t *quant_tbl) 
+{
     float mb[8 * 8] __attribute((aligned(16)));
     float mb2[8 * 8] __attribute((aligned(16)));
 
@@ -143,7 +148,8 @@ void dequant_idct_block_8x8(int16_t *in_data, int16_t *out_data, uint8_t *quant_
         out_data[i] = mb[i];
 }
 
-void catchCudaError(const char *message) {
+void catchCudaError(const char *message) 
+{
     cudaError_t error = cudaGetLastError();
     if (error != cudaSuccess) {
         fprintf(stderr, "ERROR: %s: %s\n", message, cudaGetErrorString(error));
