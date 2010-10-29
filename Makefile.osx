@@ -12,7 +12,7 @@ CC                := /usr/bin/gcc-4.0
 
 all: c63enc c63dec
 
-c63enc: c63enc.o dsp.o tables.o io.o c63_write.o common.o me.o
+c63enc: c63enc.o dsp.o tables.o io.o c63_write.o common.o me.o dct.o
 	$(NVCC) $(NVCFLAGS) $^ -o $@ $(LIBS) 
 
 c63dec: c63dec.o dsp.o tables.o io.o common.o me.o
