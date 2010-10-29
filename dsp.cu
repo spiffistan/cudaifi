@@ -6,8 +6,11 @@
 #include "tables.h"
 #include "dsp.hcu"
 #define ISQRT2 0.70710678118654f
+
 extern "C" {
+
 #include "c63.h"
+
 static void transpose_block(float *in_data, float *out_data) {
     int i, j;
     for (i = 0; i < 8; ++i)
@@ -151,32 +154,39 @@ void catchCudaError(const char *message) {
 } /* end extern "C" */
 
 ///////////////////////////////////////////////////////////////////////////////
-// TEXTURE LOADING ////////////////////////////////////////////////////////////
+// CUDA KERNELS HOST //////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
+
 texture<uint8_t, 2, cudaReadModeElementType> tex_ref;
 texture<uint8_t, 2, cudaReadModeElementType> tex_orig;
 
-void load_orig(uint8_t *host_ptr, uint8_t* dev_ptr, size_t width, size_t height, size_t pitch) {
+__host__
+void load_orig(uint8_t *host_ptr, uint8_t* dev_ptr, size_t width, size_t height, size_t pitch) 
+{
     cudaMemcpy2D(dev_ptr, pitch, host_ptr, width, width, height, cudaMemcpyHostToDevice);
     cudaBindTexture2D(0, &tex_orig, dev_ptr, &tex_orig.channelDesc, width, height, pitch);
 }
 
-void load_ref(uint8_t *host_ptr, uint8_t* dev_ptr, size_t width, size_t height, size_t pitch) {
+__host__
+void load_ref(uint8_t *host_ptr, uint8_t* dev_ptr, size_t width, size_t height, size_t pitch) 
+{
     cudaMemcpy2D(dev_ptr, pitch, host_ptr, width, width, height, cudaMemcpyHostToDevice);
     cudaBindTexture2D(0, &tex_ref, dev_ptr, &tex_ref.channelDesc, width, height, pitch);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// CUDA KERNELS ///////////////////////////////////////////////////////////////
+// CUDA KERNELS DEVICE ////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 //meant for 512 threads
 //threadDim(8,8,4);
 
-#define LENGTH 40
 #define MX (blockIdx.x * 8)
 #define MY (blockIdx.y * 8)
 #define RANGE 16
+#define LENGTH 40
+#define TX threadIdx.x
+#define TY threadIdx.y
 
 __shared__ uint32_t ref[LENGTH * LENGTH]; // <= (40) * (40)
 __shared__ uint32_t orig[64];
@@ -185,23 +195,25 @@ __shared__ min_helper minimum[32 * 32];
 __device__
 inline void load_texture_values(int left, int top, int ref_index) 
 {
-    ref[ref_index] = tex2D(tex_ref, left + threadIdx.x, top + threadIdx.y);
-    ref[16 * 40 + ref_index] = tex2D(tex_ref, left + threadIdx.x, top + 16 + threadIdx.y);
+    ref[ref_index] = tex2D(tex_ref, left + TX, top + TY);
+    ref[16 * 40 + ref_index] = tex2D(tex_ref, left + TX, top + 16 + TY);
 
-    if (threadIdx.y < 8) { //TODO Fix warp serialization
+    if (TY < 8) { //TODO Fix warp serialization
         //load vertically the blocks to the right
-        ref[threadIdx.x * 40 + 32 + threadIdx.y] = tex2D(tex_ref, left + 32 + threadIdx.y, top + threadIdx.x);
+        ref[TX * 40 + 32 + TY] = tex2D(tex_ref, left + 32 + TY, top + TX);
     } else {
         //load the bottom row
-        int y = threadIdx.y - 8;
-        ref[(32 + y) * 40 + threadIdx.x] = tex2D(tex_ref, left + threadIdx.x, top + 32 + y);
+        int y = TY - 8;
+        ref[(32 + y) * 40 + TX] = tex2D(tex_ref, left + TX, top + 32 + y);
     }
-    if (threadIdx.y < 8 && threadIdx.x < 8) {
-        ref[32 * 40 + 32 + threadIdx.y * 40 + threadIdx.x] = tex2D(tex_ref, left + 32 + threadIdx.x, top + 32 + threadIdx.y);
-        orig[threadIdx.y * 8 + threadIdx.x] = tex2D(tex_orig, MX + threadIdx.x, MY + threadIdx.y);
+    if (TY < 8 && TX < 8) {
+        ref[32 * 40 + 32 + TY * 40 + TX] = tex2D(tex_ref, left + 32 + TX, top + 32 + TY);
+        orig[TY * 8 + TX] = tex2D(tex_orig, MX + TX, MY + TY);
     }
     __syncthreads();
 }
+
+
 
 #define COMPSAD(i,j); \
   minimum[res_index].value = __usad(ref[ref_index + j * 40 + i], orig[j * 8 + i], minimum[res_index].value); \
@@ -223,40 +235,45 @@ inline void calculate_usad(int res_index, int ref_index) {
     }
     __syncthreads();
 }
+
+
+
 __device__
 inline void setup_min(int res_index)
 {
-    minimum[res_index].x = threadIdx.x;
-    minimum[res_index].y = threadIdx.y;
+    minimum[res_index].x = TX;
+    minimum[res_index].y = TY;
     minimum[res_index].value = 0;
-    minimum[32 * 16 + res_index].x = threadIdx.x;
-    minimum[32 * 16 + res_index].y = 16 + threadIdx.y;
+    minimum[32 * 16 + res_index].x = TX;
+    minimum[32 * 16 + res_index].y = 16 + TY;
     minimum[32 * 16 + res_index].value = 0;
 
     __syncthreads();
 }
 
-#define MIN2(m1,m2) (m1.value) < (m2.value) ? (m1) : (m2);
-#define COMPMINSYNC(idx) minimum[res_index] = MIN2(minimum[res_index], minimum[(idx)]); __syncthreads();
-#define COMPMIN(idx) minimum[res_index] = MIN2(minimum[res_index], minimum[(idx)]);
 
+
+#define MIN2(a,b) (a.value) < (b.value) ? (a) : (b);
+#define COMPMIN(idx) minimum[res_index] = MIN2(minimum[res_index], minimum[(idx)]);
 
 __device__
 inline void reduce_min(int res_index)
 {    
-    minimum[res_index] = MIN2(minimum[res_index], minimum[16*32+res_index]); __syncthreads();
-
-    if (threadIdx.y <  8) COMPMINSYNC(8 * 32 + res_index); // reduce to 1 block_row
-    if (threadIdx.y <  4) COMPMINSYNC(4 * 32 + res_index); // reduce to 4 rows
-    if (threadIdx.y <  2) COMPMINSYNC(2 * 32 + res_index); // reduce to 2 rows
-
-    if (threadIdx.y == 0) COMPMIN(32 + res_index); // reduce to 1 row, no need to sync anymore, only 1 warp
-    if (threadIdx.y == 0 && threadIdx.x < 16) COMPMIN(16 + res_index);  // reduce to 16 values
-    if (threadIdx.y == 0 && threadIdx.x <  8) COMPMIN(8  + res_index);  // reduce to 8 values
-    if (threadIdx.y == 0 && threadIdx.x <  4) COMPMIN(4  + res_index);  // reduce to 4 values
-    if (threadIdx.y == 0 && threadIdx.x <  2) COMPMIN(2  + res_index);  // reduce to 2 values
-    if (threadIdx.y == 0 && threadIdx.x == 0) COMPMIN(1);               // reduce to 1 value
+	COMPMIN(16 * 32 + res_index); __syncthreads();			   // reduce to 2 block_rows
+    if (TY <  8) COMPMIN(8 * 32 + res_index); __syncthreads(); // reduce to 1 block_row
+    if (TY <  4) COMPMIN(4 * 32 + res_index); __syncthreads(); // reduce to 4 rows
+    if (TY <  2) COMPMIN(2 * 32 + res_index); __syncthreads(); // reduce to 2 rows
+    if (TY == 0) COMPMIN(32 + res_index); 					   // reduce to 1 row, no need to sync anymore, within 1 warp
+    if (TY == 0 && TX < 16) COMPMIN(16 + res_index);  	       // reduce to 16 values
+    if (TY == 0 && TX <  8) COMPMIN(8  + res_index);  		   // reduce to 8 values
+    if (TY == 0 && TX <  4) COMPMIN(4  + res_index);  		   // reduce to 4 values
+    if (TY == 0 && TX <  2) COMPMIN(2  + res_index);  	       // reduce to 2 values
+    if (TY == 0 && TX == 0) COMPMIN(1);               		   // reduce to 1 value
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// CUDA KERNELS GLOBAL ////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
 
 __global__ 
 void cuda_me_texture(int width, int height, macroblock * mb) 
@@ -280,14 +297,17 @@ void cuda_me_texture(int width, int height, macroblock * mb)
         top += (height - 8) - bottom;
     
 
-    int res_index = threadIdx.y * 32 + threadIdx.x;
-    int ref_index = threadIdx.y * 40 + threadIdx.x;
+    int res_index = TY * 32 + TX;
+    int ref_index = TY * 40 + TX;
+
+	// Run kernels
+
     load_texture_values(left, top, ref_index);
     setup_min(res_index);
     calculate_usad(res_index, ref_index);
     reduce_min(res_index);
 
-    if (threadIdx.x == 0 && threadIdx.y == 0) 
+    if (TX == 0 && TY == 0) 
     {
         mb[blockIdx.y * gridDim.x + blockIdx.x].mv_x = minimum[0].x + (left - MX);
         mb[blockIdx.y * gridDim.x + blockIdx.x].mv_y = minimum[0].y + (top - MY);
