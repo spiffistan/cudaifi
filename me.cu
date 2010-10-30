@@ -8,47 +8,175 @@
 #include <assert.h>
 #include <limits.h>
 #include "c63.h"
-#include "me.hcu"
-#include "dsp.hcu"
-extern "C" {
+#include "cuda_util.hcu"
 
-/* Motion estimation for 8x8 block */
+#define MX (blockIdx.x * 8)
+#define MY (blockIdx.y * 8)
+#define RANGE 16
+#define LENGTH 40
+#define TX threadIdx.x
+#define TY threadIdx.y
+#define COMPSAD(i,j); \
+  minimum[res_index].value = __usad(ref[ref_index + j * 40 + i], orig[j * 8 + i], minimum[res_index].value); \
+  minimum[16 * 32 + res_index].value = __usad(ref[(16 * 40) + ref_index + j * 40 + i], orig[j * 8 + i], minimum[16 * 32 + res_index].value);
 
-void testEqual(uint16_t *results, uint8_t *ref, int width, int height, int result_stride, int ref_stride) {
-	uint16_t *res_host = (uint16_t*) malloc(height * result_stride * sizeof(uint16_t));
-	uint8_t *ref_host = (uint8_t*) malloc(height * ref_stride * sizeof(uint8_t));
+struct min_helper {
+	uint16_t value;
+	int8_t x;
+	int8_t y;
+};
 
-	cudaMemcpy(res_host, results, height * result_stride * sizeof(uint16_t), cudaMemcpyDeviceToHost);
-	cudaMemcpy(ref_host, ref, height * ref_stride * sizeof(uint8_t), cudaMemcpyDeviceToHost);
-	int x = 0, y = 0;
-	for (y = 0; y < height; y++) {
-		printf("\nROW %d= ", y);
-		for (x = 0; x < width; x++) {
-			const char *c = ref_host[y * ref_stride + x] == res_host[y * result_stride + x] ? "C" : "W";
-			printf("%s", c);
-		}
-	}
-	printf("\n");
-	free(res_host);
-	free(ref_host);
-	exit(-1);
+///////////////////////////////////////////////////////////////////////////////
+// CUDA KERNELS HOST //////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+texture<uint8_t, 2, cudaReadModeElementType> tex_ref;
+texture<uint8_t, 2, cudaReadModeElementType> tex_orig;
+
+__host__
+void load_orig(uint8_t *host_ptr, uint8_t* dev_ptr, size_t width, size_t height, size_t pitch)
+{
+    cudaMemcpy2D(dev_ptr, pitch, host_ptr, width, width, height, cudaMemcpyHostToDevice);
+    cudaBindTexture2D(0, &tex_orig, dev_ptr, &tex_orig.channelDesc, width, height, pitch);
 }
 
-void printResult(uint16_t *results, int width, int height, int result_stride) {
-	uint16_t *res_host = (uint16_t*) malloc(height * result_stride * sizeof(uint16_t));
-
-	cudaMemcpy(res_host, results, height * result_stride * sizeof(uint16_t), cudaMemcpyDeviceToHost);
-	int x = 0, y = 0;
-	for (y = 0; y < height; y++) {
-		printf("ROW %d= ", y);
-		for (x = 0; x < width; x++) {
-			printf("%d, ", res_host[y * result_stride + x]);
-		}
-		printf("\n");
-	}
-	free(res_host);
+__host__
+void load_ref(uint8_t *host_ptr, uint8_t* dev_ptr, size_t width, size_t height, size_t pitch)
+{
+    cudaMemcpy2D(dev_ptr, pitch, host_ptr, width, width, height, cudaMemcpyHostToDevice);
+    cudaBindTexture2D(0, &tex_ref, dev_ptr, &tex_ref.channelDesc, width, height, pitch);
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// CUDA KERNELS DEVICE ////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+
+__shared__ uint32_t ref[LENGTH * LENGTH]; // <= (40) * (40)
+__shared__ uint32_t orig[64];
+__shared__ min_helper minimum[32 * 32];
+
+__device__
+inline void load_texture_values(int left, int top, int ref_index)
+{
+    ref[ref_index] = tex2D(tex_ref, left + TX, top + TY);
+    ref[16 * 40 + ref_index] = tex2D(tex_ref, left + TX, top + 16 + TY);
+
+    if (TY < 8) { //TODO Fix warp serialization
+        //load vertically the blocks to the right
+        ref[TX * 40 + 32 + TY] = tex2D(tex_ref, left + 32 + TY, top + TX);
+    } else {
+        //load the bottom row
+        int y = TY - 8;
+        ref[(32 + y) * 40 + TX] = tex2D(tex_ref, left + TX, top + 32 + y);
+    }
+    if (TY < 8 && TX < 8) {
+        ref[32 * 40 + 32 + TY * 40 + TX] = tex2D(tex_ref, left + 32 + TX, top + 32 + TY);
+        orig[TY * 8 + TX] = tex2D(tex_orig, MX + TX, MY + TY);
+    }
+    __syncthreads();
+}
+
+
+
+
+__device__
+inline void calculate_usad(int res_index, int ref_index) {
+
+    for (int j = 0; j < 8; j++) {
+        for (int i = 0; i < 8; i++) {
+            minimum[res_index].value = __usad(ref[ref_index + j * 40 + i], orig[j * 8 + i], minimum[res_index].value);
+        }
+    }
+
+    for (int j = 0; j < 8; j++) {
+        for (int i = 0; i < 8; i++) {
+            minimum[16 * 32 + res_index].value = __usad(ref[(16 * 40) + ref_index + j * 40 + i], orig[j * 8 + i], minimum[16 * 32 + res_index].value);
+        }
+    }
+    __syncthreads();
+}
+
+
+
+__device__
+inline void setup_min(int res_index)
+{
+    minimum[res_index].x = TX;
+    minimum[res_index].y = TY;
+    minimum[res_index].value = 0;
+    minimum[32 * 16 + res_index].x = TX;
+    minimum[32 * 16 + res_index].y = 16 + TY;
+    minimum[32 * 16 + res_index].value = 0;
+
+    __syncthreads();
+}
+
+
+
+#define MIN2(a,b) (a.value) < (b.value) ? (a) : (b);
+#define COMPMIN(idx) minimum[res_index] = MIN2(minimum[res_index], minimum[(idx)]);
+
+__device__
+inline void reduce_min(int res_index)
+{
+	COMPMIN(16 * 32 + res_index); __syncthreads();			   // reduce to 2 block_rows
+    if (TY <  8) COMPMIN(8 * 32 + res_index); __syncthreads(); // reduce to 1 block_row
+    if (TY <  4) COMPMIN(4 * 32 + res_index); __syncthreads(); // reduce to 4 rows
+    if (TY <  2) COMPMIN(2 * 32 + res_index); __syncthreads(); // reduce to 2 rows
+    if (TY == 0) COMPMIN(32 + res_index); 					   // reduce to 1 row, no need to sync anymore, within 1 warp
+    if (TY == 0 && TX < 16) COMPMIN(16 + res_index);  	       // reduce to 16 values
+    if (TY == 0 && TX <  8) COMPMIN(8  + res_index);  		   // reduce to 8 values
+    if (TY == 0 && TX <  4) COMPMIN(4  + res_index);  		   // reduce to 4 values
+    if (TY == 0 && TX <  2) COMPMIN(2  + res_index);  	       // reduce to 2 values
+    if (TY == 0 && TX == 0) COMPMIN(1);               		   // reduce to 1 value
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// CUDA KERNELS GLOBAL ////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+__global__
+void cuda_me_texture(int width, int height, macroblock * mb)
+{
+    int left = MX - 16;
+    int top = MY - 16;
+
+    int right = MX + 16;
+    int bottom = MY + 16;
+
+    if (left < 0)
+        left = 0;
+
+    if (top < 0)
+        top = 0;
+
+    if (right > (width - 8)) // Increase search area towards the left if we're out of bounds
+        left += (width - 8) - right;
+
+    if (bottom > (height - 8)) // Increase search area towards the top if we're out of bounds
+        top += (height - 8) - bottom;
+
+
+    int res_index = TY * 32 + TX;
+    int ref_index = TY * 40 + TX;
+
+	// Run kernels
+
+    load_texture_values(left, top, ref_index);
+    setup_min(res_index);
+    calculate_usad(res_index, ref_index);
+    reduce_min(res_index);
+
+    if (TX == 0 && TY == 0)
+    {
+        mb[blockIdx.y * gridDim.x + blockIdx.x].mv_x = minimum[0].x + (left - MX);
+        mb[blockIdx.y * gridDim.x + blockIdx.x].mv_y = minimum[0].y + (top - MY);
+        mb[blockIdx.y * gridDim.x + blockIdx.x].use_mv = 1;
+    }
+}
+
+/* Motion estimation */
 extern "C" void c63_motion_estimate(struct c63_common *cm) {
 	/* Compare this frame with previous reconstructed frame */
 	uint8_t *image_orig_Y, *image_ref_Y;
@@ -113,47 +241,3 @@ extern "C" void c63_motion_estimate(struct c63_common *cm) {
 	cudaFree(mb_dev);
 }
 
-/* Motion compensation for 8x8 block */
-__host__
-void mc_block_8x8(struct c63_common *cm, int mb_x, int mb_y, uint8_t *predicted, uint8_t *ref, int cc) {
-	struct macroblock *mb = &cm->curframe->mbs[cc][mb_y * cm->padw[cc] / 8 + mb_x];
-
-	if (!mb->use_mv)
-		return;
-
-	int left = mb_x * 8;
-	int top = mb_y * 8;
-	int right = left + 8;
-	int bottom = top + 8;
-
-	int w = cm->padw[cc];
-
-	/* Copy block from ref mandated by MV */
-	int x, y;
-	for (y = top; y < bottom; ++y) {
-		for (x = left; x < right; ++x) {
-			predicted[y * w + x] = ref[(y + mb->mv_y) * w + (x + mb->mv_x)];
-		}
-	}
-}
-
-extern void c63_motion_compensate(struct c63_common *cm) {
-	int mb_x, mb_y;
-
-	/* Luma */
-	for (mb_y = 0; mb_y < cm->mb_rows; ++mb_y) {
-		for (mb_x = 0; mb_x < cm->mb_cols; ++mb_x) {
-			mc_block_8x8(cm, mb_x, mb_y, cm->curframe->predicted->Y, cm->refframe->recons->Y, 0);
-		}
-	}
-
-	/* Chroma */
-	for (mb_y = 0; mb_y < cm->mb_rows / 2; ++mb_y) {
-		for (mb_x = 0; mb_x < cm->mb_cols / 2; ++mb_x) {
-			mc_block_8x8(cm, mb_x, mb_y, cm->curframe->predicted->U, cm->refframe->recons->U, 1);
-			mc_block_8x8(cm, mb_x, mb_y, cm->curframe->predicted->V, cm->refframe->recons->V, 2);
-		}
-	}
-}
-
-}

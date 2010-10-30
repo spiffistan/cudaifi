@@ -1,0 +1,7 @@
+#ifndef CUDA_UTIL_HCU
+#define CUDA_UTIL_HCU
+
+
+void catchCudaError(const char *message);
+
+#endif //DEFINE CUDA_UTIL_HCU

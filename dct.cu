@@ -2,6 +2,7 @@
 #include <math.h>
 #include <inttypes.h>
 #include "c63.h"
+#include "cuda_util.hcu"
 
 #define TX threadIdx.x
 #define TY threadIdx.y
@@ -202,7 +203,7 @@ void idct_dequantize_cuda(int width, int16_t *out_data, uint8_t *qtable)
 	int global_tid = block_start + tid;
 	
 	// Fetch from texture memory into shared memory
-	block[global_tid] = __int2float_rn(tex2D(tex_orig, TEX_SELECT_X, TEX_SELECT_Y) - tex2D(tex_pred, TEX_SELECT_X, TEX_SELECT_Y));
+	block[global_tid] = __int2float_rn(tex2D(tex_orig, TEX_SELECT_X, TEX_SELECT_Y));
 
 	if (TZ == 0)
 	    quanttable[tid] = __int2float_rn(qtable[tid]);
@@ -217,18 +218,11 @@ void idct_dequantize_cuda(int width, int16_t *out_data, uint8_t *qtable)
 	idct1d(block_start);
 	untranspose(tid, block_start);
 	
+	//add the prediction
+	block[global_tid] +=  tex2D(tex_pred, TEX_SELECT_X, TEX_SELECT_Y);
+
 	// Write from shared memory to device memory
 	out_data[DY * BY * width + DX * DY * DZ * BX + global_tid] = __float2int_rn(block[global_tid]);
-}
-
-
-
-void catchCudaError(const char *message) {
-	cudaError_t error = cudaGetLastError();
-	if (error != cudaSuccess) {
-		fprintf(stderr, "ERROR: %s: %s\n", message, cudaGetErrorString(error));
-		exit(-1);
-	}
 }
 
 extern "C" void dct_quantize_frame(c63_common *cm) {
