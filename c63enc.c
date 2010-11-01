@@ -78,34 +78,9 @@ static void c63_encode_image(struct c63_common *cm, yuv_t *image) {
 		cm->frames_since_keyframe = 0;
 
 		fprintf(stderr, " (keyframe) ");
-	} else
-		cm->curframe->keyframe = 0;
+	} else cm->curframe->keyframe = 0;
 
-	if (!cm->curframe->keyframe) {
-		/* Motion Estimation */
-		c63_motion_estimate(cm);
-
-		/* Motion Compensation */
-		c63_motion_compensate(cm);
-	}
-
-	/* DCT and Quantization */
-
-	dct_quantize_frame(cm);
-	//    dct_quantize(image->Y, cm->curframe->predicted->Y, cm->padw[0], cm->padh[0], cm->curframe->residuals->Ydct, cm->quanttbl[0]);
-	//    dct_quantize(image->U, cm->curframe->predicted->U, cm->padw[1], cm->padh[1], cm->curframe->residuals->Udct, cm->quanttbl[1]);
-	//    dct_quantize(image->V, cm->curframe->predicted->V, cm->padw[2], cm->padh[2], cm->curframe->residuals->Vdct, cm->quanttbl[2]);
-
-	idct_dequantize_frame(cm);
-//
-//	if (!cm->curframe->keyframe) {
-//	} else {
-//		/* Reconstruct frame for inter-prediction */
-//		dequantize_idct(cm->curframe->residuals->Ydct, cm->curframe->predicted->Y, cm->ypw, cm->yph, cm->curframe->recons->Y, cm->quanttbl[0]);
-//		dequantize_idct(cm->curframe->residuals->Udct, cm->curframe->predicted->U, cm->upw, cm->uph, cm->curframe->recons->U, cm->quanttbl[1]);
-//		dequantize_idct(cm->curframe->residuals->Vdct, cm->curframe->predicted->V, cm->vpw, cm->vph, cm->curframe->recons->V, cm->quanttbl[2]);
-//	}
-	/* dump_image can be used here to check if the prediction is correct */
+	cuda_run(cm);
 
 	write_frame(cm);
 
@@ -209,8 +184,7 @@ int main(int argc, char **argv) {
 
 	input_file = argv[optind];
 
-	if (limit_numframes)
-		fprintf(stderr, "Limited to %d frames.\n", limit_numframes);
+	if (limit_numframes) fprintf(stderr, "Limited to %d frames.\n", limit_numframes);
 
 	FILE *infile = fopen(input_file, "rb");
 
@@ -218,6 +192,7 @@ int main(int argc, char **argv) {
 		perror("fopen");
 		exit(EXIT_FAILURE);
 	}
+	cuda_init(cm);
 
 	/* Encode input frames */
 	int numframes = 0;
@@ -240,10 +215,9 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Done!\n");
 
 		++numframes;
-		if (limit_numframes && numframes >= limit_numframes)
-			break;
+		if (limit_numframes && numframes >= limit_numframes) break;
 	}
-
+	cuda_stop();
 	fclose(outfile);
 	fclose(infile);
 	//

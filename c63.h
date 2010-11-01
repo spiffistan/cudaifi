@@ -55,11 +55,8 @@ struct macroblock {
 
 struct frame {
 	yuv_t *orig; // Original input image
-	yuv_t *orig_cuda;
 	yuv_t *recons; // Reconstructed image
-	yuv_t *recons_cuda;
 	yuv_t *predicted; // Predicted frame from intra-prediction
-	yuv_t *predicted_cuda;
 
 	dct_t *residuals; // Difference between original image and predicted frame
 
@@ -86,7 +83,6 @@ struct c63_common {
 
 	struct frame *refframe;
 	struct frame *curframe;
-
 	int framenum;
 
 	int keyframe_interval;

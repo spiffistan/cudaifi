@@ -125,12 +125,12 @@ struct frame* create_frame(struct c63_common *cm, yuv_t *image)
 
     f->residuals = malloc(sizeof(dct_t));
     f->residuals->Ydct = calloc(cm->ypw * cm->yph, sizeof(int16_t));
-    f->residuals->Udct = calloc(cm->upw * cm->uph, sizeof(int16_t));
-    f->residuals->Vdct = calloc(cm->vpw * cm->vph, sizeof(int16_t));
+    f->residuals->Udct = calloc(cm->ypw * cm->yph, sizeof(int16_t));
+    f->residuals->Vdct = calloc(cm->ypw * cm->yph, sizeof(int16_t));
 
-    f->mbs[0] = calloc(cm->ypw * cm->yph, sizeof(struct macroblock));
-    f->mbs[1] = calloc(cm->upw * cm->uph, sizeof(struct macroblock));
-    f->mbs[2] = calloc(cm->vpw * cm->vph, sizeof(struct macroblock));
+    f->mbs[0] = calloc(cm->mb_cols * cm->mb_rows, sizeof(struct macroblock));
+    f->mbs[1] = calloc(cm->mb_cols / 2 * cm->mb_rows / 2, sizeof(struct macroblock));
+    f->mbs[2] = calloc(cm->mb_cols / 2 * cm->mb_rows / 2, sizeof(struct macroblock));
 
     return f;
 }

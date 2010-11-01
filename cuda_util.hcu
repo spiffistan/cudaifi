@@ -1,7 +1,92 @@
 #ifndef CUDA_UTIL_HCU
 #define CUDA_UTIL_HCU
+#include "c63.h"
+
+#define TX threadIdx.x
+#define TY threadIdx.y
+#define TZ threadIdx.z
+
+#define BX blockIdx.x
+#define BY blockIdx.y
+#define BZ blockIdx.z
+
+#define DX blockDim.x
+#define DY blockDim.y
+#define DZ blockDim.z
+
+#define GX gridDim.x
+#define GY gridDim.y
+#define GZ gridDim.z
+
+struct cuda_frame {
+	yuv_t *image;
+	size_t image_pitch[3];
+
+	yuv_t *predicted;
+	size_t predicted_pitch[3];
+
+	yuv_t *curr_recons;
+	size_t curr_recons_pitch[3];
+
+	yuv_t *last_recons;
+	size_t last_recons_pitch[3];
+
+	dct_t *residuals;
+
+	macroblock* mbs[3];
+
+	uint8_t *qtables[3];
+
+	dim3 me_blockDim_Y;
+	dim3 me_blockDim_UV;
+	dim3 me_threadDim;
+
+	dim3 mc_blockDim_Y;
+	dim3 mc_blockDim_UV;
+	dim3 mc_threadDim;
+
+	dim3 dct_blockDim_Y;
+	dim3 dct_blockDim_UV;
+	dim3 dct_threadDim;
+
+	int mb_width_Y;
+	int mb_height_Y;
+	int mb_width_UV;
+	int mb_height_UV;
+
+};
+
+struct cuda_data {
+	uint32_t frame_number;
+	yuv_t *image;
+	macroblock *mb[3];
+	dct_t *residuals;
+};
+
+struct queue {
+	cuda_data *value;
+	queue *next;
+};
 
 
+extern "C" void c63_motion_estimate(struct c63_common *cm, struct cuda_frame *cframe);
+extern "C" void motion_compensate_cuda(struct c63_common *cm, struct cuda_frame *cframe);
+extern "C" void idct_dequantize_frame(struct c63_common *cm, struct cuda_frame *cframe);
+extern "C" void dct_quantize_frame(struct c63_common *cm, struct cuda_frame *cframe);
+extern "C" void cuda_init(struct c63_common *cm);
+extern "C" void cuda_stop();
+extern "C" void test(c63_common *cm);
 void catchCudaError(const char *message);
+void push_input(struct cuda_data *image);
+struct cuda_output pop_output();
+
+texture<int16_t, 1, cudaReadModeElementType> tex_residual;
+texture<uint8_t, 2, cudaReadModeElementType> tex_orig;
+texture<uint8_t, 2, cudaReadModeElementType> tex_pred;
+texture<uint8_t, 2, cudaReadModeElementType> tex_ref;
+texture<uint8_t, 2, cudaReadModeElementType> tex_recons;
+
+
+
 
 #endif //DEFINE CUDA_UTIL_HCU
