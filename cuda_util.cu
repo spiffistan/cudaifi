@@ -27,11 +27,11 @@ extern "C" void cuda_init(c63_common *cm) {
 	cframe->mb_width_UV = cm->mb_cols / 2;
 	cframe->mb_height_UV = cm->mb_rows / 2;
 
-	cframe->dct_threadDim = dim3(8, 8, 1);
+	cframe->dct_threadDim = dim3(8, 8, 4);
 	cframe->dct_blockDim_Y = dim3(ceil(cm->mb_cols / cframe->dct_threadDim.z), cm->mb_rows);
 	cframe->dct_blockDim_UV = dim3(ceil((cm->vpw / 8.0f) / cframe->dct_threadDim.z), cm->vph / 8);
 
-	cframe->mc_threadDim = dim3(8, 8, 1);
+	cframe->mc_threadDim = dim3(8, 8, 4);
 	cframe->mc_blockDim_Y = dim3(ceil(cm->mb_cols / cframe->mc_threadDim.z), cm->mb_rows);
 	cframe->mc_blockDim_UV = dim3(ceil((cm->vpw / 8.0f) / cframe->mc_threadDim.z), cm->vph / 8);
 
@@ -133,7 +133,7 @@ extern "C" void cuda_run(struct c63_common *cm) {
 		c63_motion_estimate(cm, cframe);
 
 		/* Motion Compensation */
-		motion_compensate_cuda(cm, cframe);
+		//motion_compensate_cuda(cm, cframe);
 
 	}
 
