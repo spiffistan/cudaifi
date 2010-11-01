@@ -7,6 +7,7 @@
 #include <math.h>
 #include <assert.h>
 #include <limits.h>
+#include <pthread.h>
 
 #include "c63.h"
 #include "tables.h"
@@ -28,6 +29,78 @@ static uint32_t vpw;
 /* getopt */
 extern int optind;
 extern char *optarg;
+
+
+// QUEUE //////////////////////////////////////////////////////////////////////
+
+#define NFRAMES 3
+typedef struct 
+{
+	yuv_t framebuf[NFRAMES];
+	uint32_t head, tail;
+	uint8_t full, empty;
+	uint8_t done; 
+	pthread_mutex_t *mutex;
+	pthread_cond_t *notFull, *notEmpty;
+} queue_t;
+
+#define CATCH(p, str) if(p == NULL) { perror(str); exit(EXIT_FAILURE); }
+queue_t *init_queue(void) 
+{
+	queue_t *fifo = (queue_t *) malloc(sizeof(queue_t)); CATCH(fifo, "malloc");
+	
+	fifo->empty = 1;
+	fifo->full  = 0;
+	fifo->head  = 0;
+	fifo->tail  = 0;
+	
+	fifo->mutex = (pthread_mutex_t *) malloc (sizeof (pthread_mutex_t)); CATCH(fifo->mutex, "malloc");
+	fifo->notFull = (pthread_cond_t *) malloc (sizeof (pthread_cond_t)); CATCH(fifo->notFull, "malloc");
+	fifo->notEmpty = (pthread_cond_t *) malloc (sizeof (pthread_cond_t)); CATCH(fifo->notEmpty, "malloc");
+	
+	pthread_mutex_init(fifo->mutex, NULL);
+	pthread_cond_init(fifo->notFull, NULL);
+	pthread_cond_init(fifo->notEmpty, NULL);
+	
+	return(fifo);
+}
+
+void destroy_queue (queue_t *fifo)
+{
+	pthread_mutex_destroy(fifo->mutex);
+	free(fifo->mutex);	
+	pthread_cond_destroy(fifo->notFull);
+	free(fifo->notFull);
+	pthread_cond_destroy(fifo->notEmpty);
+	free(fifo->notEmpty);
+	free(fifo);
+}
+
+void queue_add(queue_t *fifo, yuv_t *in)
+{
+	int *p = memcpy(&(fifo->framebuf[fifo->tail]), in, sizeof(yuv_t)); CATCH(p, "memcpy");
+	
+	fifo->tail += sizeof(yuv_t);
+	if(fifo->tail == NFRAMES*sizeof(yuv_t))
+		fifo->tail = 0;
+	if(fifo->tail == fifo->head)
+		fifo->full = 1;
+	fifo->empty = 0;
+}
+
+void queue_del(queue_t *fifo, yuv_t *out)
+{
+	int *p = memcpy(out, &(fifo->framebuf[fifo->head]), sizeof(yuv_t)); CATCH(p, "memcpy");
+	
+	fifo->head += NFRAMES*sizeof(yuv_t);
+	if(fifo->head == NFRAMES*sizeof(yuv_t))
+		fifo->head = 0;
+	if(fifo->head == fifo->tail)
+		fifo->empty = 1;
+	fifo->full = 0;
+}
+
+// READ FILE //////////////////////////////////////////////////////////////////
 
 /* Read YUV frames */
 static yuv_t* read_yuv(FILE *file) {
@@ -65,6 +138,8 @@ static yuv_t* read_yuv(FILE *file) {
 
 	return image;
 }
+
+// ENCODE /////////////////////////////////////////////////////////////////////
 
 static void c63_encode_image(struct c63_common *cm, yuv_t *image) {
 	/* Advance to next frame */
@@ -132,6 +207,20 @@ static void print_help() {
 	exit(EXIT_FAILURE);
 }
 
+struct r_args 
+{
+	FILE *infile;
+	queue_t *fifo;
+} r_args;
+
+struct w_args
+{
+	queue_t *fifo;
+	struct c63_common *cm;
+	int numframes;
+	int limit_numframes;
+} w_args;
+
 int main(int argc, char **argv) {
 	int c;
 	yuv_t *image;
@@ -196,15 +285,39 @@ int main(int argc, char **argv) {
 
 	/* Encode input frames */
 	int numframes = 0;
-	;
-	while (!feof(infile)) {
-		image = read_yuv(infile);
+	
+	// WIP ////////////////////////////////////////////////////////////////////
+		
+	queue_t *fifo = init_queue();
+	
+	fifo->done = 0;
+	
+	pthread_t reader, writer;
+		
+	struct w_args *writer_args = malloc(sizeof(struct w_args));
+	struct r_args *reader_args = malloc(sizeof(struct r_args));
+	
+	reader_args->fifo = fifo;
+	reader_args->infile = infile;
+	
+	writer_args->fifo = fifo;
+	writer_args->cm = cm;
+	writer_args->numframes = numframes;
+	writer_args->limit_numframes = limit_numframes;
+	
+	pthread_create(&reader, NULL, reader_thread, reader_args);
+	pthread_create(&writer, NULL, writer_thread, writer_args);
+	
+	pthread_join(reader, NULL);
+	pthread_join(writer, NULL);
+	
+	/*
+	while (!feof(infile)) 
+	{
+		image = read_yuv(infile); if(!image) break;
+		queue_add(image);
+		
 
-		if (!image) {
-			break;
-		}
-
-		fprintf(stderr, "Encoding frame %d, ", numframes);
 		c63_encode_image(cm, image);
 
 		free(image->Y);
@@ -217,18 +330,82 @@ int main(int argc, char **argv) {
 		++numframes;
 		if (limit_numframes && numframes >= limit_numframes) break;
 	}
+	*/
+	
+	
+	destroy_queue(fifo);
+	free(writer_args);
+	free(reader_args);
+		
 	cuda_stop();
 	fclose(outfile);
 	fclose(infile);
-	//
-	//    int i,j;
-	//    for (i=0; i<2; ++i)
-	//    {
-	//        printf("int freq[] = {");
-	//        for (j=0; j<ARRAY_SIZE(frequencies[i]); ++j)
-	//            printf("%d, ", frequencies[i][j]);
-	//        printf("};\n");
-	//    }
-	//
+	
 	return EXIT_SUCCESS;
 }
+
+// PTHREADS ///////////////////////////////////////////////////////////////////
+
+void *reader_thread(void *a) 
+{
+	struct r_args *args = (struct r_args *) a;
+	
+	while (!feof(args->infile)) 
+	{
+		pthread_mutex_lock(args->fifo->mutex);
+		
+		while(args->fifo->full) // WAIT WHILE FULL
+			pthread_cond_wait(args->fifo->notFull, args->fifo->mutex);
+		
+		yuv_t *image = read_yuv(args->infile); 
+		
+		if(!image) break;
+		
+		queue_add(args->fifo, image);
+		
+		pthread_mutex_unlock(args->fifo->mutex);
+		pthread_cond_signal(args->fifo->notEmpty);
+	}
+	
+	pthread_mutex_lock(args->fifo->mutex);
+	args->fifo->done = 1;
+	pthread_mutex_unlock(args->fifo->mutex);
+	
+	return(NULL);
+}
+
+void *writer_thread(void *a)
+{
+	struct w_args *args = (struct w_args *) a;
+		
+	while(!args->fifo->done && !args->fifo->empty) 
+	{
+		pthread_mutex_lock(args->fifo->mutex);
+		
+		while(args->fifo->empty) // WAIT WHILE EMPTY
+			pthread_cond_wait(args->fifo->notEmpty, args->fifo->mutex);
+		
+		yuv_t *image;
+		
+		queue_del(args->fifo, image);
+		
+		fprintf(stderr, "Encoding frame %d, ", args->numframes);
+		
+		c63_encode_image(args->cm, image);
+		
+		fprintf(stderr, "Done!\n");		
+    	
+		free(image->Y);
+		free(image->U);
+		free(image->V);
+		free(image);
+		
+		++args->numframes;
+		if (args->limit_numframes && args->numframes >= args->limit_numframes) break;
+		
+		pthread_mutex_unlock(args->fifo->mutex);
+		pthread_cond_signal (args->fifo->notFull);
+	}	
+	return(NULL);
+}
+

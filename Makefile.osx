@@ -4,25 +4,26 @@ CUDA_INSTALL_PATH := /usr/local/cuda
 CUDA_SDK_PATH     := /Developer/GPU\ Computing/C
 INCLUDES          += -I. -I$(CUDA_INSTALL_PATH)/include -I$(CUDA_SDK_PATH)/common/inc
 LIBS              := -L$(CUDA_INSTALL_PATH)/lib -L$(CUDA_SDK_PATH)/lib
-CFLAGS            := 
-NVCFLAGS          := 
+CFLAGS            := -O3 -pthread
+NVCFLAGS          := -O3 -maxrregcount 16 --ptxas-options=-v -pg
 LDFLAGS           := -lm -lcuda 
 NVCC              := nvcc  
 CC                := /usr/bin/gcc-4.0 
 
 all: c63enc c63dec
 
-c63enc: c63enc.o dsp.o tables.o io.o c63_write.o common.o me.o precode_me.o dct.o mc.o cuda_util.o
+c63enc: c63enc.o dsp.o tables.o io.o c63_write.o common.o me.o precode_me.o dct.o mc.o cuda_util.o mc_cpu.o
 	$(NVCC) $(NVCFLAGS) $^ -o $@ $(LIBS) 
 
-c63dec: c63dec.o dsp.o tables.o io.o common.o me.o
+c63dec: c63dec.o dsp.o tables.o io.o common.o mc_cpu.o dct.o cuda_util.o mc.o me.o
 	$(NVCC) $(NVCFLAGS) $^ -o $@ $(LIBS) 
 
 %.o: %.c
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< 
 
-%.o: %.cu 
+%.o: %.cu
 	$(NVCC) $(NVCFLAGS) $(INCLUDES) -c $<
 
 clean:
 	rm -f *.o c63enc c63dec
+

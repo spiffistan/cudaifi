@@ -113,6 +113,9 @@ struct frame* create_frame(struct c63_common *cm, yuv_t *image);
 
 void dump_image(yuv_t *image, int w, int h, FILE *fp);
 
+void *writer_thread(void *a);
+void *reader_thread(void *a);
+
 //CUDA
 
 #endif /* mjpeg_encoder.h */
