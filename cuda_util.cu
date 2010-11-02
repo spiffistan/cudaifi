@@ -3,7 +3,6 @@
 #include <stdint.h>
 #include "c63.h"
 #include "cuda_util.hcu"
-#include "workqueue.h"
 void catchCudaError(const char *message) {
 	cudaError_t error = cudaGetLastError();
 	if (error != cudaSuccess) {

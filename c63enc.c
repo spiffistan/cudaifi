@@ -9,7 +9,6 @@
 #include <limits.h>
 #include "c63.h"
 #include "tables.h"
-#include "workqueue.h"
 
 static char *output_file, *input_file;
 FILE *outfile;
@@ -311,10 +310,14 @@ void *writer_thread(void *a) {
 		free(w->image->U);
 		free(w->image->V);
 		free(w->image);
+		free(w->residuals->Ydct);
+		free(w->residuals->Udct);
+		free(w->residuals->Vdct);
 		free(w->residuals);
 		free(w->mbs[0]);
 		free(w->mbs[1]);
 		free(w->mbs[2]);
+		free(w);
 	}
 	return (NULL);
 }
