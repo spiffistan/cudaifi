@@ -23,7 +23,6 @@ struct cuda_frame {
 	size_t image_pitch[3];
 
 	yuv_t *predicted;
-	size_t predicted_pitch[3];
 
 	yuv_t *curr_recons;
 	size_t curr_recons_pitch[3];
@@ -82,7 +81,7 @@ struct cuda_output pop_output();
 
 texture<int16_t, 1, cudaReadModeElementType> tex_residual;
 texture<uint8_t, 2, cudaReadModeElementType> tex_orig;
-texture<uint8_t, 2, cudaReadModeElementType> tex_pred;
+texture<uint8_t, 1, cudaReadModeElementType> tex_pred;
 texture<uint8_t, 2, cudaReadModeElementType> tex_ref;
 texture<uint8_t, 2, cudaReadModeElementType> tex_recons;
 

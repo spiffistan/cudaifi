@@ -114,6 +114,7 @@ void dequantize(int tid, int block_start) {
 
 #define TEX_SELECT_X (DX * BX * DZ + (TZ * 8) + TX)
 #define TEX_SELECT_Y (DY * BY + TY)
+#define TEX_FETCH ((DY * BY * width) + (DX * DY * DZ * BX) + global_tid)
 
 __global__
 void dct_quantize_cuda(int width, int height, int16_t *out_data, uint8_t *qtable) {
@@ -122,7 +123,7 @@ void dct_quantize_cuda(int width, int height, int16_t *out_data, uint8_t *qtable
 	int global_tid = block_start + tid;
 
 	// Fetch from texture memory into shared memory
-	block[global_tid] = __int2float_rz(tex2D(tex_orig, TEX_SELECT_X, TEX_SELECT_Y) - tex2D(tex_pred, TEX_SELECT_X, TEX_SELECT_Y));
+	block[global_tid] = __int2float_rz(tex2D(tex_orig, TEX_SELECT_X, TEX_SELECT_Y) - tex1Dfetch(tex_pred, TEX_FETCH));
 
 	if (TZ == 0) quanttable[tid] = __int2float_rz(qtable[tid]);
 
@@ -137,7 +138,7 @@ void dct_quantize_cuda(int width, int height, int16_t *out_data, uint8_t *qtable
 	quantize(tid, block_start);
 
 	// Write from shared memory to device memory
-	out_data[DY * BY * width + DX * DY * DZ * BX + global_tid] = (int16_t) block[global_tid];
+	if (TEX_SELECT_X < width) out_data[DY * BY * width + DX * DY * DZ * BX + global_tid] = (int16_t) block[global_tid];
 }
 
 __global__
@@ -162,39 +163,39 @@ void idct_dequantize_cuda(int width, int height, size_t pitch, uint8_t *out_data
 	transpose(tid, block_start);
 
 	//add the prediction
-	int16_t tmp = __int2float_rn(block[global_tid]) + (int16_t) tex2D(tex_pred, TEX_SELECT_X, TEX_SELECT_Y);
+	int16_t tmp = __int2float_rn(block[global_tid]) + (int16_t) tex1Dfetch(tex_pred, TEX_FETCH);
 	//Clamp values
 	if (tmp < 0) tmp = 0;
 	else if (tmp > 255) tmp = 255.0;
 
 	// Write from shared memory to device memory
-	out_data[TEX_SELECT_Y * pitch + TEX_SELECT_X] = tmp;
+	if (TEX_SELECT_X < width) out_data[TEX_SELECT_Y * pitch + TEX_SELECT_X] = tmp;
 }
 
 extern "C" void dct_quantize_frame(c63_common *cm, struct cuda_frame *cframe) {
 	cudaBindTexture2D(0, &tex_orig, cframe->image->Y, &tex_orig.channelDesc, cm->ypw, cm->yph, cframe->image_pitch[0]);
-	cudaBindTexture2D(0, &tex_pred, cframe->predicted->Y, &tex_pred.channelDesc, cm->ypw, cm->yph, cframe->predicted_pitch[0]);
+	cudaBindTexture(0, &tex_pred, cframe->predicted->Y, &tex_pred.channelDesc, cm->ypw * cm->yph);
 	dct_quantize_cuda<<<cframe->dct_blockDim_Y, cframe->dct_threadDim>>>(cm->ypw,cm->yph,cframe->residuals->Ydct,cframe->qtables[0]);
 
 	cudaBindTexture2D(0, &tex_orig, cframe->image->U, &tex_orig.channelDesc, cm->upw, cm->uph, cframe->image_pitch[1]);
-	cudaBindTexture2D(0, &tex_pred, cframe->predicted->U, &tex_pred.channelDesc, cm->upw, cm->uph, cframe->predicted_pitch[1]);
+	cudaBindTexture(0, &tex_pred, cframe->predicted->U, &tex_pred.channelDesc, cm->upw * cm->uph);
 	dct_quantize_cuda<<<cframe->dct_blockDim_UV, cframe->dct_threadDim>>>(cm->upw,cm->uph,cframe->residuals->Udct,cframe->qtables[1]);
 
 	cudaBindTexture2D(0, &tex_orig, cframe->image->V, &tex_orig.channelDesc, cm->vpw, cm->vph, cframe->image_pitch[2]);
-	cudaBindTexture2D(0, &tex_pred, cframe->predicted->V, &tex_pred.channelDesc, cm->vpw, cm->vph, cframe->predicted_pitch[2]);
+	cudaBindTexture(0, &tex_pred, cframe->predicted->V, &tex_pred.channelDesc, cm->vpw * cm->vph);
 dct_quantize_cuda<<<cframe->dct_blockDim_UV, cframe->dct_threadDim>>>(cm->vpw,cm->vph,cframe->residuals->Vdct,cframe->qtables[2]);
 }
 
 extern "C" void idct_dequantize_frame(c63_common *cm, struct cuda_frame *cframe) {
 	cudaBindTexture(0, &tex_residual, cframe->residuals->Ydct, &tex_residual.channelDesc, cm->ypw * cm->yph * sizeof(int16_t));
-	cudaBindTexture2D(0, &tex_pred, cframe->predicted->Y, &tex_pred.channelDesc, cm->ypw, cm->yph, cframe->predicted_pitch[0]);
+	cudaBindTexture(0, &tex_pred, cframe->predicted->Y, &tex_pred.channelDesc, cm->ypw * cm->yph);
 	idct_dequantize_cuda<<<cframe->dct_blockDim_Y, cframe->dct_threadDim>>>(cm->ypw,cm->yph,cframe->curr_recons_pitch[0],cframe->curr_recons->Y,cframe->qtables[0]);
 
 	cudaBindTexture(0, &tex_residual, cframe->residuals->Udct, &tex_residual.channelDesc, cm->upw * cm->uph * sizeof(int16_t));
-	cudaBindTexture2D(0, &tex_pred, cframe->predicted->U, &tex_pred.channelDesc, cm->upw, cm->uph, cframe->predicted_pitch[1]);
+	cudaBindTexture(0, &tex_pred, cframe->predicted->U, &tex_pred.channelDesc, cm->upw * cm->uph);
 	idct_dequantize_cuda<<<cframe->dct_blockDim_UV, cframe->dct_threadDim>>>(cm->upw,cm->uph,cframe->curr_recons_pitch[1],cframe->curr_recons->U,cframe->qtables[1]);
 
 	cudaBindTexture(0, &tex_residual, cframe->residuals->Vdct, &tex_residual.channelDesc, cm->vpw * cm->vph * sizeof(int16_t));
-	cudaBindTexture2D(0, &tex_pred, cframe->predicted->V, &tex_pred.channelDesc, cm->vpw, cm->vph, cframe->predicted_pitch[2]);
+	cudaBindTexture(0, &tex_pred, cframe->predicted->V, &tex_pred.channelDesc, cm->vpw * cm->vph);
 idct_dequantize_cuda<<<cframe->dct_blockDim_UV, cframe->dct_threadDim>>>(cm->vpw,cm->vph,cframe->curr_recons_pitch[2],cframe->curr_recons->V,cframe->qtables[2]);
 }

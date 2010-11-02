@@ -51,9 +51,9 @@ extern "C" void cuda_init(c63_common *cm) {
 	cudaMallocPitch(&cframe->last_recons->U, &cframe->last_recons_pitch[1], cm->ypw, cm->yph);
 	cudaMallocPitch(&cframe->last_recons->V, &cframe->last_recons_pitch[2], cm->ypw, cm->yph);
 
-	cudaMallocPitch(&cframe->predicted->Y, &cframe->predicted_pitch[0], cm->ypw, cm->yph);
-	cudaMallocPitch(&cframe->predicted->U, &cframe->predicted_pitch[1], cm->upw, cm->uph);
-	cudaMallocPitch(&cframe->predicted->V, &cframe->predicted_pitch[2], cm->vpw, cm->vph);
+	cudaMalloc(&cframe->predicted->Y, cm->ypw * cm->yph);
+	cudaMalloc(&cframe->predicted->U, cm->upw * cm->uph);
+	cudaMalloc(&cframe->predicted->V, cm->vpw * cm->vph);
 
 	cudaMalloc(&cframe->residuals->Ydct, cm->ypw * cm->yph * sizeof(dct_t));
 	cudaMalloc(&cframe->residuals->Udct, cm->vpw * cm->vph * sizeof(dct_t));
@@ -99,9 +99,9 @@ void cuda_new_frame(c63_common *cm) {
 	cudaMemset2D(cframe->curr_recons->U, cframe->curr_recons_pitch[1], 0, cm->ypw, cm->yph);
 	cudaMemset2D(cframe->curr_recons->V, cframe->curr_recons_pitch[2], 0, cm->ypw, cm->yph);
 
-	cudaMemset2D(cframe->predicted->Y, cframe->predicted_pitch[0], 0, cm->ypw, cm->yph);
-	cudaMemset2D(cframe->predicted->U, cframe->predicted_pitch[1], 0, cm->upw, cm->uph);
-	cudaMemset2D(cframe->predicted->V, cframe->predicted_pitch[2], 0, cm->vpw, cm->vph);
+	cudaMemset(cframe->predicted->Y, 0, cm->ypw * cm->yph);
+	cudaMemset(cframe->predicted->U, 0, cm->upw * cm->uph);
+	cudaMemset(cframe->predicted->V, 0, cm->vpw * cm->vph);
 
 	cudaMemset(cframe->mbs[0], 0, cframe->mb_width_Y * cframe->mb_height_Y * sizeof(macroblock));
 	cudaMemset(cframe->mbs[1], 0, cframe->mb_width_UV * cframe->mb_height_UV * sizeof(macroblock));
