@@ -272,7 +272,7 @@ int main(int argc, char **argv) {
 void *reader_thread(void *a) {
 	struct r_args *args = (struct r_args *) a;
 	int framecounter = 0;
-	while (!feof(args->infile) && framecounter < args->max_frames) {
+	while (!feof(args->infile) && (framecounter < args->max_frames || args->max_frames == 0)) {
 
 		workitem_t *w = malloc(sizeof(workitem_t));
 		w->image = read_yuv(args->infile);
