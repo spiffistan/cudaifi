@@ -7,10 +7,9 @@
 #include <math.h>
 #include <assert.h>
 #include <limits.h>
-#include <pthread.h>
-
 #include "c63.h"
 #include "tables.h"
+#include "workqueue.h"
 
 static char *output_file, *input_file;
 FILE *outfile;
@@ -30,98 +29,29 @@ static uint32_t vpw;
 extern int optind;
 extern char *optarg;
 
+//thread args
+struct r_args {
+	uint32_t max_frames;
+	struct c63_common *cm;
+	FILE *infile;
+	queue_t *fifo;
+} r_args;
+
+struct w_args {
+	queue_t *output;
+	struct c63_common *cm;
+} w_args;
+
+struct c_args {
+	queue_t *input;
+	queue_t *output;
+	struct c63_common *cm;
+} c_args;
+
 // QUEUE //////////////////////////////////////////////////////////////////////
 
-#define MAX_FRAMES 3
-
-typedef struct node {
-	yuv_t *data;
-	struct node *next;
-} node_t;
-
-typedef struct {
-	node_t *head;
-	node_t *tail;
-	uint8_t size;
-	uint8_t done;
-	pthread_mutex_t *mutex;
-	pthread_cond_t *notFull, *notEmpty;
-} queue_t;
 
 #define CATCH(p, str) if(p == NULL) { perror(str); exit(EXIT_FAILURE); }
-
-queue_t *init_queue(void) {
-	queue_t *fifo = (queue_t *) malloc(sizeof(queue_t));
-	CATCH(fifo, "malloc");
-
-	fifo->size = 0;
-	fifo->head = 0;
-	fifo->tail = 0;
-
-	fifo->mutex = (pthread_mutex_t *) malloc(sizeof(pthread_mutex_t));
-	fifo->notFull = (pthread_cond_t *) malloc(sizeof(pthread_cond_t));
-	fifo->notEmpty = (pthread_cond_t *) malloc(sizeof(pthread_cond_t));
-
-	pthread_mutex_init(fifo->mutex, NULL);
-	pthread_cond_init(fifo->notFull, NULL);
-	pthread_cond_init(fifo->notEmpty, NULL);
-
-	return (fifo);
-}
-
-void destroy_queue(queue_t *fifo) {
-	pthread_mutex_destroy(fifo->mutex);
-	free(fifo->mutex);
-	pthread_cond_destroy(fifo->notFull);
-	free(fifo->notFull);
-	pthread_cond_destroy(fifo->notEmpty);
-	free(fifo->notEmpty);
-	free(fifo);
-}
-
-void queue_push(queue_t *fifo, yuv_t *in) {
-
-	pthread_mutex_lock(fifo->mutex);
-
-	if (fifo->size >= MAX_FRAMES) { // WAIT WHILE FULL
-		pthread_cond_wait(fifo->notFull, fifo->mutex);
-	}
-	node_t *new = malloc(sizeof(node_t));
-	new->data = in;
-	if (fifo->size != 0) {
-		fifo->tail->next = new;
-		fifo->tail = new;
-	} else {
-		fifo->tail = new;
-		fifo->head = new;
-		fifo->head->next = new;
-	}
-	fifo->size++;
-
-	pthread_mutex_unlock(fifo->mutex);
-	pthread_cond_signal(fifo->notEmpty);
-
-}
-
-yuv_t* queue_pop(queue_t *fifo) {
-
-	pthread_mutex_lock(fifo->mutex);
-	if (fifo->size == 0) {
-		printf("WAITING FOR DATA\n");
-		pthread_cond_wait(fifo->notEmpty, fifo->mutex); // WAIT WHILE EMPTY
-		printf("GOT DATA SIZE=%d\n", fifo->size);
-	}
-	node_t* this = fifo->head;
-	fifo->size--;
-	fifo->head = fifo->head->next;
-	yuv_t *out = this->data;
-
-	free(this);
-
-	pthread_mutex_unlock(fifo->mutex);
-	pthread_cond_signal(fifo->notFull);
-	return out;
-}
 
 // READ FILE //////////////////////////////////////////////////////////////////
 
@@ -157,33 +87,34 @@ static yuv_t* read_yuv(FILE *file) {
 		fprintf(stderr, "Reached end of file.\n");
 		return NULL;
 	}
+
 	return image;
 }
 
 // ENCODE /////////////////////////////////////////////////////////////////////
 
-static void c63_encode_image(struct c63_common *cm, yuv_t *image) {
-	/* Advance to next frame */
-	destroy_frame(cm->refframe);
-	cm->refframe = cm->curframe;
-	cm->curframe = create_frame(cm, image);
-
-	/* Check if keyframe */
-	if (cm->framenum == 0 || cm->frames_since_keyframe == cm->keyframe_interval) {
-		cm->curframe->keyframe = 1;
-		cm->frames_since_keyframe = 0;
-
-		fprintf(stderr, " (keyframe) ");
-	} else
-		cm->curframe->keyframe = 0;
-
-	cuda_run(cm);
-
-	write_frame(cm);
-
-	++cm->framenum;
-	++cm->frames_since_keyframe;
-}
+//static void c63_encode_image(struct c63_common *cm, yuv_t *image) {
+//	/* Advance to next frame */
+//	destroy_frame(cm->refframe);
+//	cm->refframe = cm->curframe;
+//	cm->curframe = create_frame(cm, image);
+//
+//	/* Check if keyframe */
+//	if (cm->framenum == 0 || cm->frames_since_keyframe == cm->keyframe_interval) {
+//		cm->curframe->keyframe = 1;
+//		cm->frames_since_keyframe = 0;
+//
+//		fprintf(stderr, " (keyframe) ");
+//	} else
+//		cm->curframe->keyframe = 0;
+//
+//	cuda_run(cm);
+//
+//	write_frame(cm);
+//
+//	++cm->framenum;
+//	++cm->frames_since_keyframe;
+//}
 
 struct c63_common* init_c63_enc(int width, int height) {
 	int i;
@@ -228,18 +159,6 @@ static void print_help() {
 
 	exit(EXIT_FAILURE);
 }
-
-struct r_args {
-	FILE *infile;
-	queue_t *fifo;
-} r_args;
-
-struct w_args {
-	queue_t *fifo;
-	struct c63_common *cm;
-	int numframes;
-	int limit_numframes;
-} w_args;
 
 int main(int argc, char **argv) {
 	int c;
@@ -308,51 +227,38 @@ int main(int argc, char **argv) {
 
 	// WIP ////////////////////////////////////////////////////////////////////
 
-	queue_t *fifo = init_queue();
-
-	fifo->done = 0;
-
-	pthread_t reader, writer;
+	queue_t *input_queue = init_queue();
+	queue_t *output_queue = init_queue();
+	input_queue->done = 0;
+	output_queue->done = 0;
+	pthread_t reader, writer, cuda_thread;
 
 	struct w_args *writer_args = malloc(sizeof(struct w_args));
 	struct r_args *reader_args = malloc(sizeof(struct r_args));
+	struct c_args *cuda_args = malloc(sizeof(struct c_args));
 
-	reader_args->fifo = fifo;
+	reader_args->max_frames = limit_numframes;
+	reader_args->fifo = input_queue;
 	reader_args->infile = infile;
+	reader_args->cm = cm;
 
-	writer_args->fifo = fifo;
+	writer_args->output = output_queue;
 	writer_args->cm = cm;
-	writer_args->numframes = numframes;
-	writer_args->limit_numframes = limit_numframes;
+
+	cuda_args->input = input_queue;
+	cuda_args->output = output_queue;
+	cuda_args->cm = cm;
 
 	pthread_create(&reader, NULL, reader_thread, reader_args);
+	pthread_create(&cuda_thread, NULL, encoder_thread, cuda_args);
 	pthread_create(&writer, NULL, writer_thread, writer_args);
 
 	pthread_join(reader, NULL);
+	pthread_join(cuda_thread, NULL);
 	pthread_join(writer, NULL);
 
-	/*
-	 while (!feof(infile))
-	 {
-	 image = read_yuv(infile); if(!image) break;
-	 queue_add(image);
 
-
-	 c63_encode_image(cm, image);
-
-	 free(image->Y);
-	 free(image->U);
-	 free(image->V);
-	 free(image);
-
-	 fprintf(stderr, "Done!\n");
-
-	 ++numframes;
-	 if (limit_numframes && numframes >= limit_numframes) break;
-	 }
-	 */
-
-	destroy_queue(fifo);
+	destroy_queue(input_queue);
 	free(writer_args);
 	free(reader_args);
 
@@ -366,48 +272,78 @@ int main(int argc, char **argv) {
 
 void *reader_thread(void *a) {
 	struct r_args *args = (struct r_args *) a;
+	int framecounter = 0;
+	while (!feof(args->infile) && framecounter < args->max_frames) {
 
-	while (!feof(args->infile)) {
-		yuv_t *image = read_yuv(args->infile);
-
-		if (!image)
+		workitem_t *w = malloc(sizeof(workitem_t));
+		w->image = read_yuv(args->infile);
+		if (!w->image)
 			break;
+		w->residuals = malloc(sizeof(dct_t));
+		w->residuals->Ydct = malloc(args->cm->ypw * args->cm->yph * sizeof(int16_t));
+		w->residuals->Udct = malloc(args->cm->upw * args->cm->uph * sizeof(int16_t));
+		w->residuals->Vdct = malloc(args->cm->vpw * args->cm->vph * sizeof(int16_t));
+		w->mbs[0] = malloc(args->cm->mb_cols * args->cm->mb_cols * sizeof(struct macroblock));
+		w->mbs[1] = malloc(args->cm->mb_cols * args->cm->mb_cols * sizeof(struct macroblock));
+		w->mbs[2] = malloc(args->cm->mb_cols * args->cm->mb_cols * sizeof(struct macroblock));
 
-		queue_push(args->fifo, image);
+		w->framenum = framecounter++;
+		queue_push(args->fifo, w);
 	}
-
-	pthread_mutex_lock(args->fifo->mutex);
-	args->fifo->done = 1;
-	pthread_mutex_unlock(args->fifo->mutex);
-
+	queue_stop(args->fifo);
 	return (NULL);
 }
 
 void *writer_thread(void *a) {
 	struct w_args *args = (struct w_args *) a;
-	cuda_init(args->cm);
 
-	while (!args->fifo->done) {
+	while (1) {
 
-		yuv_t *image = queue_pop(args->fifo);
-
-		fprintf(stderr, "Encoding frame %d, ", args->numframes);
-		c63_encode_image(args->cm, image);
-
-		fprintf(stderr, "Done!\n");
-
-		free(image->Y);
-		free(image->U);
-		free(image->V);
-		free(image);
-
-		++args->numframes;
-		if (args->limit_numframes && args->numframes >= args->limit_numframes)
+		workitem_t *w = queue_pop(args->output);
+		if(!w) {
 			break;
+		}
+		write_frame(args->cm, w);
+		++args->cm->framenum;
+		++args->cm->frames_since_keyframe;
 
+		free(w->image->Y);
+		free(w->image->U);
+		free(w->image->V);
+		free(w->image);
+		free(w->residuals);
+		free(w->mbs[0]);
+		free(w->mbs[1]);
+		free(w->mbs[2]);
 	}
-	cuda_stop();
-
 	return (NULL);
 }
 
+void *encoder_thread(void *cuda_args) {
+	/* Advance to next frame */
+	struct c_args *args = (struct c_args*) cuda_args;
+	cuda_init(args->cm);
+
+	while (1) {
+		/* Check if keyframe */
+		workitem_t *w = queue_pop(args->input);
+		if(!w)
+			break;
+		fprintf(stderr, "Encoding frame %d, ", w->framenum);
+
+		if (w->framenum % args->cm->keyframe_interval == 0) {
+			w->keyframe = 1;
+			fprintf(stderr, " (keyframe) ");
+		} else
+			w->keyframe = 0;
+
+		cuda_run(args->cm, w);
+		fprintf(stderr, "Done!\n");
+
+		queue_push(args->output, w);
+	}
+
+	queue_stop(args->output);
+	cuda_stop();
+	return (NULL);
+}

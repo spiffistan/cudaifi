@@ -55,29 +55,14 @@ struct cuda_frame {
 
 };
 
-struct cuda_data {
-	uint32_t frame_number;
-	yuv_t *image;
-	macroblock *mb[3];
-	dct_t *residuals;
-};
-
-struct queue {
-	cuda_data *value;
-	queue *next;
-};
-
-
 extern "C" void c63_motion_estimate(struct c63_common *cm, struct cuda_frame *cframe);
 extern "C" void motion_compensate_cuda(struct c63_common *cm, struct cuda_frame *cframe);
 extern "C" void idct_dequantize_frame(struct c63_common *cm, struct cuda_frame *cframe);
 extern "C" void dct_quantize_frame(struct c63_common *cm, struct cuda_frame *cframe);
 extern "C" void cuda_init(struct c63_common *cm);
 extern "C" void cuda_stop();
-extern "C" void test(c63_common *cm);
+
 void catchCudaError(const char *message);
-void push_input(struct cuda_data *image);
-struct cuda_output pop_output();
 
 texture<int16_t, 1, cudaReadModeElementType> tex_residual;
 texture<uint8_t, 2, cudaReadModeElementType> tex_orig;

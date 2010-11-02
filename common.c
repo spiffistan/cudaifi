@@ -10,6 +10,7 @@
 #include "c63.h"
 #include "tables.h"
 
+
 void dequantize_idct_row(int16_t *in_data, uint8_t *prediction, int w, int h, int y,
 			 uint8_t *out_data, uint8_t *quantization)
 {

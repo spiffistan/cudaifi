@@ -5,17 +5,17 @@ CUDA_SDK_PATH     := ~/GPU\ Computing/C
 INCLUDES          += -I. -I$(CUDA_INSTALL_PATH)/include -I$(CUDA_SDK_PATH)/common/inc
 LIBS              := -L$(CUDA_INSTALL_PATH)/lib64 -L$(CUDA_SDK_PATH)/lib64
 CFLAGS            := -O3
-NVCFLAGS          := -O3 -maxrregcount 16 --ptxas-options=-v -pg
+NVCFLAGS          := -O3 -g -maxrregcount 16 --ptxas-options=-v -pg
 LDFLAGS           := -lm -lcuda
 NVCC              := nvcc  
 CC                := gcc 
 
 all: c63enc c63dec
 
-c63enc: c63enc.o dsp.o tables.o io.o c63_write.o common.o me.o precode_me.o dct.o mc.o cuda_util.o mc_cpu.o
+c63enc: c63enc.o dsp.o tables.o io.o c63_write.o common.o me.o precode_me.o dct.o mc.o cuda_util.o workqueue.o
 	$(NVCC) $(NVCFLAGS) $^ -o $@ $(LIBS) 
 
-c63dec: c63dec.o dsp.o tables.o io.o common.o mc_cpu.o dct.o cuda_util.o mc.o me.o
+c63dec: c63dec.o dsp.o tables.o io.o common.o dct.o cuda_util.o mc.o me.o
 	$(NVCC) $(NVCFLAGS) $^ -o $@ $(LIBS) 
 
 %.o: %.c

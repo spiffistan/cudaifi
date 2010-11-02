@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include "c63.h"
 #include "cuda_util.hcu"
-
+#include "workqueue.h"
 void catchCudaError(const char *message) {
 	cudaError_t error = cudaGetLastError();
 	if (error != cudaSuccess) {
@@ -74,7 +74,7 @@ extern "C" void cuda_init(c63_common *cm) {
 
 }
 
-void cuda_new_frame(c63_common *cm) {
+void cuda_new_frame(c63_common *cm, workitem_t *work) {
 
 	yuv_t *tmp = cframe->last_recons;
 	cframe->last_recons = cframe->curr_recons;
@@ -107,42 +107,38 @@ void cuda_new_frame(c63_common *cm) {
 	cudaMemset(cframe->mbs[1], 0, cframe->mb_width_UV * cframe->mb_height_UV * sizeof(macroblock));
 	cudaMemset(cframe->mbs[2], 0, cframe->mb_width_UV * cframe->mb_height_UV * sizeof(macroblock));
 
-	cudaMemcpy2D(cframe->image->Y, cframe->image_pitch[0], cm->curframe->orig->Y, cm->ypw, cm->ypw, cm->yph, cudaMemcpyHostToDevice);
-	cudaMemcpy2D(cframe->image->U, cframe->image_pitch[1], cm->curframe->orig->U, cm->upw, cm->upw, cm->uph, cudaMemcpyHostToDevice);
-	cudaMemcpy2D(cframe->image->V, cframe->image_pitch[2], cm->curframe->orig->V, cm->vpw, cm->vpw, cm->vph, cudaMemcpyHostToDevice);
+	cudaMemcpy2D(cframe->image->Y, cframe->image_pitch[0], work->image->Y, cm->width, cm->width, cm->height, cudaMemcpyHostToDevice);
+	cudaMemcpy2D(cframe->image->U, cframe->image_pitch[1], work->image->U, cm->width/2, cm->width/2, cm->height, cudaMemcpyHostToDevice);
+	cudaMemcpy2D(cframe->image->V, cframe->image_pitch[2], work->image->V, cm->width/2, cm->width/2, cm->height, cudaMemcpyHostToDevice);
 
 	catchCudaError("CUDA_NEW_FRAME");
 }
 
-void cuda_store_values(struct c63_common *cm) {
-	cudaMemcpy(cm->curframe->mbs[0], cframe->mbs[0], cframe->mb_width_Y * cframe->mb_height_Y * sizeof(macroblock), cudaMemcpyDeviceToHost);
-	cudaMemcpy(cm->curframe->mbs[1], cframe->mbs[1], cframe->mb_width_UV * cframe->mb_height_UV * sizeof(macroblock), cudaMemcpyDeviceToHost);
-	cudaMemcpy(cm->curframe->mbs[2], cframe->mbs[2], cframe->mb_width_UV * cframe->mb_height_UV * sizeof(macroblock), cudaMemcpyDeviceToHost);
+void cuda_store_values(struct c63_common *cm, workitem_t *work) {
+	cudaMemcpy(work->mbs[0], cframe->mbs[0], cframe->mb_width_Y * cframe->mb_height_Y * sizeof(macroblock), cudaMemcpyDeviceToHost);
+	cudaMemcpy(work->mbs[1], cframe->mbs[1], cframe->mb_width_UV * cframe->mb_height_UV * sizeof(macroblock), cudaMemcpyDeviceToHost);
+	cudaMemcpy(work->mbs[2], cframe->mbs[2], cframe->mb_width_UV * cframe->mb_height_UV * sizeof(macroblock), cudaMemcpyDeviceToHost);
 
-	cudaMemcpy(cm->curframe->residuals->Ydct, cframe->residuals->Ydct, cm->ypw * cm->yph * sizeof(int16_t), cudaMemcpyDeviceToHost);
-	cudaMemcpy(cm->curframe->residuals->Udct, cframe->residuals->Udct, cm->upw * cm->uph * sizeof(int16_t), cudaMemcpyDeviceToHost);
-	cudaMemcpy(cm->curframe->residuals->Vdct, cframe->residuals->Vdct, cm->vpw * cm->vph * sizeof(int16_t), cudaMemcpyDeviceToHost);
+	cudaMemcpy(work->residuals->Ydct, cframe->residuals->Ydct, cm->ypw * cm->yph * sizeof(int16_t), cudaMemcpyDeviceToHost);
+	cudaMemcpy(work->residuals->Udct, cframe->residuals->Udct, cm->upw * cm->uph * sizeof(int16_t), cudaMemcpyDeviceToHost);
+	cudaMemcpy(work->residuals->Vdct, cframe->residuals->Vdct, cm->vpw * cm->vph * sizeof(int16_t), cudaMemcpyDeviceToHost);
 	catchCudaError("CUDA_STORE_VALUES");
 
 }
-extern "C" void cuda_run(struct c63_common *cm) {
-	cuda_new_frame(cm);
+extern "C" void cuda_run(struct c63_common *cm, workitem_t *work) {
+	cuda_new_frame(cm, work);
 
-	if (!cm->curframe->keyframe) {
-		/* Motion Estimation */
+	if (!work->keyframe) {
+		/* Motion Estimation and compensation */
 		c63_motion_estimate(cm, cframe);
-
-		/* Motion Compensation */
-		//motion_compensate_cuda(cm, cframe);
 
 	}
 
-	//cm->curframe->keyframe = 1;
 	/* DCT and Quantization */
 	dct_quantize_frame(cm, cframe);
 	idct_dequantize_frame(cm, cframe);
 
-	cuda_store_values(cm);
+	cuda_store_values(cm, work);
 }
 
 extern "C" void cuda_stop() {

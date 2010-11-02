@@ -39,7 +39,7 @@ static void write_DQT(struct c63_common *cm)
     put_bytes(cm->e_ctx.fp, cm->quanttbl[2], 64);
 }
 
-static void write_SOF0(struct c63_common *cm)
+static void write_SOF0(struct c63_common *cm, uint8_t keyframe)
 {
     int16_t size = 8 + 3 * COLOR_COMPONENTS + 1;
 
@@ -75,7 +75,7 @@ static void write_SOF0(struct c63_common *cm)
     put_byte(cm->e_ctx.fp, 2); /* Quant. tbl. id */
 
     /* Is this a keyframe or not? */
-    put_byte(cm->e_ctx.fp, cm->curframe->keyframe);
+    put_byte(cm->e_ctx.fp, keyframe);
 }
 
 static void write_DHT_HTS(struct c63_common *cm, uint8_t id, uint8_t *numlength, uint8_t* data)
@@ -154,14 +154,14 @@ static inline uint8_t bit_width(int16_t i)
 }
 
 
-static void write_block(struct c63_common *cm, int16_t *in_data, uint32_t width, uint32_t height,
+static void write_block(struct c63_common *cm, int16_t *in_data, struct macroblock *mv, uint32_t width, uint32_t height,
         uint32_t uoffset, uint32_t voffset, int16_t *prev_DC,
         int32_t cc, int channel)
 {
     uint32_t i, j;
 
     /* Write motion vector */
-    struct macroblock *mb = &cm->curframe->mbs[channel][voffset/8 * cm->padw[channel]/8 + uoffset/8];
+    struct macroblock *mb = &mv[voffset/8 * cm->padw[channel]/8 + uoffset/8];
 
     /* Use inter pred? */
     put_bits(&cm->e_ctx, mb->use_mv, 1);
@@ -268,7 +268,7 @@ static void write_block(struct c63_common *cm, int16_t *in_data, uint32_t width,
     }
 }
 
-static void write_interleaved_data_MCU(struct c63_common *cm, int16_t *dct, uint32_t wi, uint32_t he,
+static void write_interleaved_data_MCU(struct c63_common *cm, int16_t *dct, struct macroblock *mv, uint32_t wi, uint32_t he,
         uint32_t h, uint32_t v, uint32_t x,
         uint32_t y, int16_t *prev_DC, int32_t cc, int channel)
 {
@@ -283,12 +283,12 @@ static void write_interleaved_data_MCU(struct c63_common *cm, int16_t *dct, uint
             ii = wi-8;
             ii = MIN(i, ii);
 
-            write_block(cm, dct, wi, he, ii, jj, prev_DC, cc, channel);
+            write_block(cm, dct, mv,wi, he, ii, jj, prev_DC, cc, channel);
         }
     }
 }
 
-static void write_interleaved_data(struct c63_common *cm)
+static void write_interleaved_data(struct c63_common *cm, workitem_t *work)
 {
     int16_t prev_DC[3] = {0, 0, 0};
     uint32_t u, v;
@@ -307,16 +307,16 @@ static void write_interleaved_data(struct c63_common *cm)
     {
         for(u = 0; u < ublocks; ++u)
         {
-            write_interleaved_data_MCU(cm, cm->curframe->residuals->Ydct, cm->ypw, cm->yph, YX, YY, u, v, &prev_DC[0], yhtbl, 0);
-            write_interleaved_data_MCU(cm, cm->curframe->residuals->Udct, cm->upw, cm->uph, UX, UY, u, v, &prev_DC[1], uhtbl, 1);
-            write_interleaved_data_MCU(cm, cm->curframe->residuals->Vdct, cm->vpw, cm->vph, VX, VY, u, v, &prev_DC[2], vhtbl, 2);
+            write_interleaved_data_MCU(cm, work->residuals->Ydct, work->mbs[0], cm->ypw, cm->yph, YX, YY, u, v, &prev_DC[0], yhtbl, 0);
+            write_interleaved_data_MCU(cm, work->residuals->Udct, work->mbs[1],cm->upw, cm->uph, UX, UY, u, v, &prev_DC[1], uhtbl, 1);
+            write_interleaved_data_MCU(cm, work->residuals->Vdct, work->mbs[2],cm->vpw, cm->vph, VX, VY, u, v, &prev_DC[2], vhtbl, 2);
         }
     }
 
     flush_bits(&cm->e_ctx);
 }
 
-void write_frame(struct c63_common *cm)
+void write_frame(struct c63_common *cm, workitem_t *work)
 {
     /* Write headers */
 
@@ -325,13 +325,13 @@ void write_frame(struct c63_common *cm)
     /* Define Quantization Table(s) */
     write_DQT(cm);
     /* Start Of Frame 0(Baseline DCT) */
-    write_SOF0(cm);
+    write_SOF0(cm, work->keyframe);
     /* Define Huffman Tables(s) */
     write_DHT(cm);
     /* Start of Scan */
     write_SOS(cm);
 
-    write_interleaved_data(cm);
+    write_interleaved_data(cm, work);
 
     /* End Of Image */
     write_EOI(cm);

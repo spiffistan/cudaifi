@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <pthread.h>
 
 #define MAX_FILELENGTH 200
 #define DEFAULT_OUTPUT_FILE "a.mjpg"
@@ -91,6 +92,38 @@ struct c63_common {
 	struct entropy_ctx e_ctx;
 };
 
+
+//QUEUE
+#define MAX_FRAMES 3
+
+typedef struct workitem {
+	uint8_t keyframe;
+	uint32_t framenum;
+	yuv_t *image;
+	struct macroblock *mbs[3];
+	dct_t *residuals;
+} workitem_t;
+
+typedef struct node {
+	workitem_t *data;
+	struct node *next;
+} node_t;
+
+typedef struct {
+	node_t *head;
+	node_t *tail;
+	uint8_t size;
+	uint8_t done;
+	pthread_mutex_t *mutex;
+	pthread_cond_t *notFull, *notEmpty;
+} queue_t;
+
+queue_t* init_queue(void);
+void destroy_queue(queue_t *fifo);
+void queue_push(queue_t *fifo, workitem_t *in);
+workitem_t* queue_pop(queue_t *fifo);
+void queue_stop(queue_t *fifo);
+
 void put_bytes(FILE *fp, const void* data, unsigned int len);
 void put_byte(FILE *fp, int byte);
 void put_bits(struct entropy_ctx *c, uint16_t bits, uint8_t n);
@@ -104,7 +137,7 @@ void dequant_idct_block_8x8(int16_t *in_data, int16_t *out_data, uint8_t *quant_
 
 void c63_motion_compensate(struct c63_common *cm);
 
-void write_frame(struct c63_common *cm);
+void write_frame(struct c63_common *cm, workitem_t *work);
 void dequantize_idct(int16_t *in_data, uint8_t *prediction, uint32_t width, uint32_t height, uint8_t *out_data, uint8_t *quantization);
 void dct_quantize(uint8_t *in_data, uint8_t *prediction, uint32_t width, uint32_t height, int16_t *out_data, uint8_t *quantization);
 
@@ -115,7 +148,8 @@ void dump_image(yuv_t *image, int w, int h, FILE *fp);
 
 void *writer_thread(void *a);
 void *reader_thread(void *a);
+void *encoder_thread(void *a);
 
-//CUDA
+
 
 #endif /* mjpeg_encoder.h */
