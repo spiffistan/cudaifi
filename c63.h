@@ -148,7 +148,7 @@ void dump_image(yuv_t *image, int w, int h, FILE *fp);
 
 void *writer_thread(void *a);
 void *reader_thread(void *a);
-void *encoder_thread(void *a);
+void encoder_thread(queue_t* input, queue_t* output, struct c63_common *cm);
 
 
 
