@@ -18,6 +18,10 @@
 #define GY gridDim.y
 #define GZ gridDim.z
 
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <cuda_runtime_api.h>
+
 struct cuda_frame {
 	yuv_t *image;
 	size_t image_pitch[3];
@@ -53,6 +57,7 @@ struct cuda_frame {
 	int mb_width_UV;
 	int mb_height_UV;
 
+	cudaStream_t stream;
 };
 
 extern "C" void c63_motion_estimate(struct c63_common *cm, struct cuda_frame *cframe);

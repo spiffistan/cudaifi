@@ -278,6 +278,8 @@ int main(int argc, char **argv) {
 
 	cuda_stop();
 	destroy_queue(input_queue);
+	destroy_queue(output_queue);
+	destroy_queue(available);
 	free(writer_args);
 	free(reader_args);
 
@@ -296,15 +298,8 @@ void *reader_thread(void *a) {
 
 		workitem_t *w = queue_pop(args->available);
 		read_yuv(args->infile, w->image);
-		if (!w->image)
+		if (!w->image || feof(args->infile))
 			break;
-		w->residuals = malloc(sizeof(dct_t));
-		w->residuals->Ydct = malloc(args->cm->ypw * args->cm->yph * sizeof(int16_t));
-		w->residuals->Udct = malloc(args->cm->upw * args->cm->uph * sizeof(int16_t));
-		w->residuals->Vdct = malloc(args->cm->vpw * args->cm->vph * sizeof(int16_t));
-		w->mbs[0] = malloc(args->cm->mb_cols * args->cm->mb_cols * sizeof(struct macroblock));
-		w->mbs[1] = malloc(args->cm->mb_cols * args->cm->mb_cols * sizeof(struct macroblock));
-		w->mbs[2] = malloc(args->cm->mb_cols * args->cm->mb_cols * sizeof(struct macroblock));
 
 		w->framenum = framecounter++;
 		queue_push(args->input, w);

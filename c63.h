@@ -5,6 +5,9 @@
 #include <stdint.h>
 #include <inttypes.h>
 #include <pthread.h>
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <cuda_runtime_api.h>
 
 #define MAX_FILELENGTH 200
 #define DEFAULT_OUTPUT_FILE "a.mjpg"
@@ -102,6 +105,7 @@ typedef struct workitem {
 	yuv_t *image;
 	struct macroblock *mbs[3];
 	dct_t *residuals;
+	cudaStream_t stream;
 } workitem_t;
 
 typedef struct node {

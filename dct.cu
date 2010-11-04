@@ -175,27 +175,27 @@ void idct_dequantize_cuda(int width, int height, size_t pitch, uint8_t *out_data
 extern "C" void dct_quantize_frame(c63_common *cm, struct cuda_frame *cframe) {
 	cudaBindTexture2D(0, &tex_orig, cframe->image->Y, &tex_orig.channelDesc, cm->ypw, cm->yph, cframe->image_pitch[0]);
 	cudaBindTexture(0, &tex_pred, cframe->predicted->Y, &tex_pred.channelDesc, cm->ypw * cm->yph);
-	dct_quantize_cuda<<<cframe->dct_blockDim_Y, cframe->dct_threadDim>>>(cm->ypw,cm->yph,cframe->residuals->Ydct,cframe->qtables[0]);
+	dct_quantize_cuda<<<cframe->dct_blockDim_Y, cframe->dct_threadDim,0,cframe->stream>>>(cm->ypw,cm->yph,cframe->residuals->Ydct,cframe->qtables[0]);
 
 	cudaBindTexture2D(0, &tex_orig, cframe->image->U, &tex_orig.channelDesc, cm->upw, cm->uph, cframe->image_pitch[1]);
 	cudaBindTexture(0, &tex_pred, cframe->predicted->U, &tex_pred.channelDesc, cm->upw * cm->uph);
-	dct_quantize_cuda<<<cframe->dct_blockDim_UV, cframe->dct_threadDim>>>(cm->upw,cm->uph,cframe->residuals->Udct,cframe->qtables[1]);
+	dct_quantize_cuda<<<cframe->dct_blockDim_UV, cframe->dct_threadDim,0,cframe->stream>>>(cm->upw,cm->uph,cframe->residuals->Udct,cframe->qtables[1]);
 
 	cudaBindTexture2D(0, &tex_orig, cframe->image->V, &tex_orig.channelDesc, cm->vpw, cm->vph, cframe->image_pitch[2]);
 	cudaBindTexture(0, &tex_pred, cframe->predicted->V, &tex_pred.channelDesc, cm->vpw * cm->vph);
-dct_quantize_cuda<<<cframe->dct_blockDim_UV, cframe->dct_threadDim>>>(cm->vpw,cm->vph,cframe->residuals->Vdct,cframe->qtables[2]);
+dct_quantize_cuda<<<cframe->dct_blockDim_UV, cframe->dct_threadDim,0,cframe->stream>>>(cm->vpw,cm->vph,cframe->residuals->Vdct,cframe->qtables[2]);
 }
 
 extern "C" void idct_dequantize_frame(c63_common *cm, struct cuda_frame *cframe) {
 	cudaBindTexture(0, &tex_residual, cframe->residuals->Ydct, &tex_residual.channelDesc, cm->ypw * cm->yph * sizeof(int16_t));
 	cudaBindTexture(0, &tex_pred, cframe->predicted->Y, &tex_pred.channelDesc, cm->ypw * cm->yph);
-	idct_dequantize_cuda<<<cframe->dct_blockDim_Y, cframe->dct_threadDim>>>(cm->ypw,cm->yph,cframe->curr_recons_pitch[0],cframe->curr_recons->Y,cframe->qtables[0]);
+	idct_dequantize_cuda<<<cframe->dct_blockDim_Y, cframe->dct_threadDim,0,cframe->stream>>>(cm->ypw,cm->yph,cframe->curr_recons_pitch[0],cframe->curr_recons->Y,cframe->qtables[0]);
 
 	cudaBindTexture(0, &tex_residual, cframe->residuals->Udct, &tex_residual.channelDesc, cm->upw * cm->uph * sizeof(int16_t));
 	cudaBindTexture(0, &tex_pred, cframe->predicted->U, &tex_pred.channelDesc, cm->upw * cm->uph);
-	idct_dequantize_cuda<<<cframe->dct_blockDim_UV, cframe->dct_threadDim>>>(cm->upw,cm->uph,cframe->curr_recons_pitch[1],cframe->curr_recons->U,cframe->qtables[1]);
+	idct_dequantize_cuda<<<cframe->dct_blockDim_UV, cframe->dct_threadDim,0,cframe->stream>>>(cm->upw,cm->uph,cframe->curr_recons_pitch[1],cframe->curr_recons->U,cframe->qtables[1]);
 
 	cudaBindTexture(0, &tex_residual, cframe->residuals->Vdct, &tex_residual.channelDesc, cm->vpw * cm->vph * sizeof(int16_t));
 	cudaBindTexture(0, &tex_pred, cframe->predicted->V, &tex_pred.channelDesc, cm->vpw * cm->vph);
-idct_dequantize_cuda<<<cframe->dct_blockDim_UV, cframe->dct_threadDim>>>(cm->vpw,cm->vph,cframe->curr_recons_pitch[2],cframe->curr_recons->V,cframe->qtables[2]);
+idct_dequantize_cuda<<<cframe->dct_blockDim_UV, cframe->dct_threadDim,0,cframe->stream>>>(cm->vpw,cm->vph,cframe->curr_recons_pitch[2],cframe->curr_recons->V,cframe->qtables[2]);
 }
