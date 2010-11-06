@@ -18,6 +18,17 @@ __constant__ float dctlookup[8][8] = { { 1.000000f, 0.980785f, 0.923880f, 0.8314
 		-0.707107f, -0.195090f, 0.923880f, -0.831470f }, { 1.000000f, -0.831470f, 0.382683f, 0.195090f, -0.707107f, 0.980785f, -0.923880f, 0.555570f }, { 1.000000f, -0.980785f, 0.923880f, -0.831470f,
 		0.707107f, -0.555570f, 0.382683f, -0.195090f } };
 
+__constant__ float idctlookup[8][8] = {
+	{	1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000, 1.000000},
+	{	0.980785, 0.831470, 0.555570, 0.195090, -0.195090, -0.555570, -0.831470, -0.980785},
+	{	0.923880, 0.382683, -0.382683, -0.923880, -0.923880, -0.382683, 0.382683, 0.923880},
+	{	0.831470, -0.195090, -0.980785, -0.555570, 0.555570, 0.980785, 0.195090, -0.831470},
+	{	0.707107, -0.707107, -0.707107, 0.707107, 0.707107, -0.707107, -0.707107, 0.707107},
+	{	0.555570, -0.980785, 0.195090, 0.831470, -0.831470, -0.195090, 0.980785, -0.555570},
+	{	0.382683, -0.923880, 0.923880, -0.382683, -0.382683, 0.923880, -0.923880, 0.382683},
+	{	0.195090, -0.555570, 0.831470, -0.980785, 0.980785, -0.831470, 0.555570, -0.195090}
+};
+
 #define SMEM_SIZE 256
 __shared__ float dct[SMEM_SIZE];
 __shared__ float block[SMEM_SIZE];
@@ -33,7 +44,7 @@ __device__
 void dct1d(int block_start) {
 	int i;
 	float dct_ = 0;
-	for (i = 0; i < 8; ++i) {
+	for (i = 0; i < 8; ++i) { //BANKCONFLICTS GALORE
 		dct_ += block[block_start + TY * 8 + i] * dctlookup[i][TX];
 	}
 	dct[block_start + TY * 8 + TX] = dct_;
@@ -45,7 +56,7 @@ void idct1d(int block_start) {
 	int i;
 	float idct = 0;
 	for (i = 0; i < 8; ++i) {
-		idct += block[block_start + TY * 8 + i] * dctlookup[TX][i];
+		idct += block[block_start + TY * 8 + i] * idctlookup[i][TX];
 	}
 
 	dct[block_start + TY * 8 + TX] = idct;
@@ -125,7 +136,8 @@ void dct_quantize_cuda(int width, int height, int16_t *out_data, uint8_t *qtable
 	// Fetch from texture memory into shared memory
 	block[global_tid] = __int2float_rz(tex2D(tex_orig, TEX_SELECT_X, TEX_SELECT_Y) - tex1Dfetch(tex_pred, TEX_FETCH));
 
-	if (TZ == 0) quanttable[tid] = __int2float_rz(qtable[tid]);
+	if (TZ == 0)
+		quanttable[tid] = __int2float_rz(qtable[tid]);
 
 	__syncthreads();
 
@@ -138,7 +150,8 @@ void dct_quantize_cuda(int width, int height, int16_t *out_data, uint8_t *qtable
 	quantize(tid, block_start);
 
 	// Write from shared memory to device memory
-	if (TEX_SELECT_X < width) out_data[DY * BY * width + DX * DY * DZ * BX + global_tid] = (int16_t) block[global_tid];
+	if (TEX_SELECT_X < width && TEX_SELECT_Y < height)
+		out_data[DY * BY * width + DX * DY * DZ * BX + global_tid] = (int16_t) block[global_tid];
 }
 
 __global__
@@ -150,7 +163,8 @@ void idct_dequantize_cuda(int width, int height, size_t pitch, uint8_t *out_data
 	// Fetch from texture memory into shared memory
 	block[global_tid] = tex1Dfetch(tex_residual, DY * BY * width + BX * DX * DY * DZ + global_tid);
 
-	if (TZ == 0) quanttable[tid] = qtable[tid];
+	if (TZ == 0)
+		quanttable[tid] = qtable[tid];
 
 	__syncthreads();
 
@@ -165,11 +179,14 @@ void idct_dequantize_cuda(int width, int height, size_t pitch, uint8_t *out_data
 	//add the prediction
 	int16_t tmp = __int2float_rn(block[global_tid]) + (int16_t) tex1Dfetch(tex_pred, TEX_FETCH);
 	//Clamp values
-	if (tmp < 0) tmp = 0;
-	else if (tmp > 255) tmp = 255.0;
+	if (tmp < 0)
+		tmp = 0;
+	else if (tmp > 255)
+		tmp = 255.0;
 
 	// Write from shared memory to device memory
-	if (TEX_SELECT_X < width) out_data[TEX_SELECT_Y * pitch + TEX_SELECT_X] = tmp;
+	if (TEX_SELECT_X < width && TEX_SELECT_Y < height)
+		out_data[TEX_SELECT_Y * pitch + TEX_SELECT_X] = tmp;
 }
 
 extern "C" void dct_quantize_frame(c63_common *cm, struct cuda_frame *cframe) {
@@ -183,7 +200,7 @@ extern "C" void dct_quantize_frame(c63_common *cm, struct cuda_frame *cframe) {
 
 	cudaBindTexture2D(0, &tex_orig, cframe->image->V, &tex_orig.channelDesc, cm->vpw, cm->vph, cframe->image_pitch[2]);
 	cudaBindTexture(0, &tex_pred, cframe->predicted->V, &tex_pred.channelDesc, cm->vpw * cm->vph);
-dct_quantize_cuda<<<cframe->dct_blockDim_UV, cframe->dct_threadDim,0,cframe->stream>>>(cm->vpw,cm->vph,cframe->residuals->Vdct,cframe->qtables[2]);
+	dct_quantize_cuda<<<cframe->dct_blockDim_UV, cframe->dct_threadDim,0,cframe->stream>>>(cm->vpw,cm->vph,cframe->residuals->Vdct,cframe->qtables[2]);
 }
 
 extern "C" void idct_dequantize_frame(c63_common *cm, struct cuda_frame *cframe) {
@@ -197,5 +214,6 @@ extern "C" void idct_dequantize_frame(c63_common *cm, struct cuda_frame *cframe)
 
 	cudaBindTexture(0, &tex_residual, cframe->residuals->Vdct, &tex_residual.channelDesc, cm->vpw * cm->vph * sizeof(int16_t));
 	cudaBindTexture(0, &tex_pred, cframe->predicted->V, &tex_pred.channelDesc, cm->vpw * cm->vph);
-idct_dequantize_cuda<<<cframe->dct_blockDim_UV, cframe->dct_threadDim,0,cframe->stream>>>(cm->vpw,cm->vph,cframe->curr_recons_pitch[2],cframe->curr_recons->V,cframe->qtables[2]);
+	idct_dequantize_cuda<<<cframe->dct_blockDim_UV, cframe->dct_threadDim,0,cframe->stream>>>(cm->vpw,cm->vph,cframe->curr_recons_pitch[2],cframe->curr_recons->V,cframe->qtables[2]);
+
 }

@@ -30,9 +30,9 @@ extern "C" void cuda_init(c63_common *cm) {
 	cframe->dct_blockDim_Y = dim3(ceil(cm->mb_cols / cframe->dct_threadDim.z), cm->mb_rows);
 	cframe->dct_blockDim_UV = dim3(ceil((cm->vpw / 8.0f) / cframe->dct_threadDim.z), cm->vph / 8);
 
-	cframe->me_threadDim = dim3(32, 16, 1);
-	cframe->me_blockDim_Y = dim3(cframe->mb_width_Y, cframe->mb_height_Y);
-	cframe->me_blockDim_UV = dim3(cframe->mb_width_UV, cframe->mb_height_UV);
+	cframe->me_threadDim = dim3(8, 4, 4);
+	cframe->me_blockDim_Y = dim3(ceil(cframe->mb_width_Y / 4.0f), ceil(cframe->mb_height_Y / 4.0f));
+	cframe->me_blockDim_UV = dim3(ceil(cframe->mb_width_UV / 4.0f), ceil(cframe->mb_height_UV / 4.0f));
 
 	cudaMallocPitch(&cframe->image->Y, &cframe->image_pitch[0], cm->ypw, cm->yph);
 	cudaMallocPitch(&cframe->image->U, &cframe->image_pitch[1], cm->upw, cm->uph);
@@ -88,25 +88,13 @@ void cuda_new_frame(c63_common *cm, workitem_t *work) {
 	cframe->curr_recons_pitch[1] = pitch[1];
 	cframe->curr_recons_pitch[2] = pitch[2];
 
-//	cudaMemset(cframe->residuals->Ydct, 0, cm->yph * cm->ypw * sizeof(int16_t));
-//	cudaMemset(cframe->residuals->Udct, 0, cm->yph * cm->ypw * sizeof(int16_t));
-//	cudaMemset(cframe->residuals->Vdct, 0, cm->yph * cm->ypw * sizeof(int16_t));
-
-//	cudaMemset2D(cframe->curr_recons->Y, cframe->curr_recons_pitch[0], 0, cm->ypw, cm->yph);
-//	cudaMemset2D(cframe->curr_recons->U, cframe->curr_recons_pitch[1], 0, cm->ypw, cm->yph);
-//	cudaMemset2D(cframe->curr_recons->V, cframe->curr_recons_pitch[2], 0, cm->ypw, cm->yph);
-
 	cudaMemset(cframe->predicted->Y, 0, cm->ypw * cm->yph);
 	cudaMemset(cframe->predicted->U, 0, cm->upw * cm->uph);
 	cudaMemset(cframe->predicted->V, 0, cm->vpw * cm->vph);
 
-//	cudaMemset(cframe->mbs[0], 0, cframe->mb_width_Y * cframe->mb_height_Y * sizeof(macroblock));
-//	cudaMemset(cframe->mbs[1], 0, cframe->mb_width_UV * cframe->mb_height_UV * sizeof(macroblock));
-//	cudaMemset(cframe->mbs[2], 0, cframe->mb_width_UV * cframe->mb_height_UV * sizeof(macroblock));
-
 	cudaMemcpy2DAsync(cframe->image->Y, cframe->image_pitch[0], work->image->Y, cm->width, cm->width, cm->height, cudaMemcpyHostToDevice, cframe->stream);
-	cudaMemcpy2DAsync(cframe->image->U, cframe->image_pitch[1], work->image->U, cm->width / 2, cm->width / 2, cm->height, cudaMemcpyHostToDevice, cframe->stream);
-	cudaMemcpy2DAsync(cframe->image->V, cframe->image_pitch[2], work->image->V, cm->width / 2, cm->width / 2, cm->height, cudaMemcpyHostToDevice, cframe->stream);
+	cudaMemcpy2DAsync(cframe->image->U, cframe->image_pitch[1], work->image->U, cm->width / 2, cm->width / 2, cm->height/2, cudaMemcpyHostToDevice, cframe->stream);
+	cudaMemcpy2DAsync(cframe->image->V, cframe->image_pitch[2], work->image->V, cm->width / 2, cm->width / 2, cm->height/2, cudaMemcpyHostToDevice, cframe->stream);
 
 	catchCudaError("CUDA_NEW_FRAME");
 }
@@ -128,15 +116,17 @@ extern "C" void cuda_run(struct c63_common *cm, workitem_t *work) {
 
 	if (!work->keyframe) {
 		/* Motion Estimation and compensation */
-		c63_motion_estimate(cm, cframe);
+		//c63_motion_estimate(cm, cframe);
+		c63_motion_estimate_log(cm, cframe);
 		cuda_store_mvs(cm, work);
 	}
 
 	/* DCT and Quantization */
 	dct_quantize_frame(cm, cframe);
+	cuda_store_residuals(cm, work);
+
 	idct_dequantize_frame(cm, cframe);
 
-	cuda_store_residuals(cm, work);
 }
 
 extern "C" void cuda_stop() {

@@ -61,6 +61,7 @@ struct cuda_frame {
 };
 
 extern "C" void c63_motion_estimate(struct c63_common *cm, struct cuda_frame *cframe);
+extern "C" void c63_motion_estimate_log(struct c63_common *cm, struct cuda_frame *cframe);
 extern "C" void motion_compensate_cuda(struct c63_common *cm, struct cuda_frame *cframe);
 extern "C" void idct_dequantize_frame(struct c63_common *cm, struct cuda_frame *cframe);
 extern "C" void dct_quantize_frame(struct c63_common *cm, struct cuda_frame *cframe);
@@ -74,7 +75,6 @@ texture<uint8_t, 2, cudaReadModeElementType> tex_orig;
 texture<uint8_t, 1, cudaReadModeElementType> tex_pred;
 texture<uint8_t, 2, cudaReadModeElementType> tex_ref;
 texture<uint8_t, 2, cudaReadModeElementType> tex_recons;
-
 
 
 

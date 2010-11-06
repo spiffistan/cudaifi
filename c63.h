@@ -105,7 +105,6 @@ typedef struct workitem {
 	yuv_t *image;
 	struct macroblock *mbs[3];
 	dct_t *residuals;
-	cudaStream_t stream;
 } workitem_t;
 
 typedef struct node {

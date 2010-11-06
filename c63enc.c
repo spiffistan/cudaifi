@@ -279,6 +279,23 @@ int main(int argc, char **argv) {
 	cuda_stop();
 	destroy_queue(input_queue);
 	destroy_queue(output_queue);
+
+	while(available->size) {
+		workitem_t* w = queue_pop(available);
+		cudaFree(w->image->Y);
+		cudaFree(w->image->U);
+		cudaFree(w->image->V);
+		cudaFree(w->image);
+		cudaFree(w->residuals->Ydct);
+		cudaFree(w->residuals->Udct);
+		cudaFree(w->residuals->Vdct);
+		cudaFree(w->residuals);
+		cudaFree(w->mbs[0]);
+		cudaFree(w->mbs[1]);
+		cudaFree(w->mbs[2]);
+		cudaFree(w);
+	}
+
 	destroy_queue(available);
 	free(writer_args);
 	free(reader_args);
@@ -341,7 +358,6 @@ void encoder_thread(queue_t* input, queue_t* output, struct c63_common *cm) {
 			fprintf(stderr, " (keyframe) ");
 		} else
 			w->keyframe = 0;
-
 		cuda_run(cm, w);
 		fprintf(stderr, "Done!\n");
 
