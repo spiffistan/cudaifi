@@ -3,17 +3,20 @@
 #include <stdint.h>
 #include "c63.h"
 #include "cuda_util.hcu"
-void catchCudaError(const char *message) {
+void catchCudaError(const char *message)
+{
 	cudaError_t error = cudaGetLastError();
-	if (error != cudaSuccess) {
+	if (error != cudaSuccess)
+	{
 		fprintf(stderr, "ERROR: %s: %s\n", message, cudaGetErrorString(error));
 		exit(-1);
 	}
 }
 struct cuda_frame *cframe;
 
-extern "C" void cuda_init(c63_common *cm) {
-
+/** Init cframe, allocate everything we will need **/
+extern "C" void cuda_init(c63_common *cm)
+{
 	cframe = (cuda_frame*) malloc(sizeof(cuda_frame));
 	cframe->image = (yuv_t*) malloc(sizeof(yuv_t));
 	cframe->curr_recons = (yuv_t*) malloc(sizeof(yuv_t));
@@ -30,11 +33,13 @@ extern "C" void cuda_init(c63_common *cm) {
 	cframe->dct_blockDim_Y = dim3(ceil(cm->mb_cols / cframe->dct_threadDim.z), cm->mb_rows);
 	cframe->dct_blockDim_UV = dim3(ceil((cm->vpw / 8.0f) / cframe->dct_threadDim.z), cm->vph / 8);
 
-	if (cm->use_naive) {
+	if (cm->use_naive)
+	{
 		cframe->me_threadDim = dim3(32, 16, 1);
 		cframe->me_blockDim_Y = dim3(cframe->mb_width_Y, cframe->mb_height_Y);
 		cframe->me_blockDim_UV = dim3(cframe->mb_width_UV, cframe->mb_height_UV);
-	} else {
+	} else
+	{
 		cframe->me_threadDim = dim3(8, 4, 4);
 		cframe->me_blockDim_Y = dim3(ceil(cframe->mb_width_Y / 4.0f), ceil(cframe->mb_height_Y / 4.0f));
 		cframe->me_blockDim_UV = dim3(ceil(cframe->mb_width_UV / 4.0f), ceil(cframe->mb_height_UV / 4.0f));
@@ -76,7 +81,8 @@ extern "C" void cuda_init(c63_common *cm) {
 
 }
 
-void cuda_new_frame(c63_common *cm, workitem_t *work) {
+void cuda_new_frame(c63_common *cm, workitem_t *work)
+{
 
 	yuv_t *tmp = cframe->last_recons;
 	cframe->last_recons = cframe->curr_recons;
@@ -104,22 +110,27 @@ void cuda_new_frame(c63_common *cm, workitem_t *work) {
 	catchCudaError("CUDA_NEW_FRAME");
 }
 
-void cuda_store_mvs(struct c63_common *cm, workitem_t *work) {
+void cuda_store_mvs(struct c63_common *cm, workitem_t *work)
+{
 	cudaMemcpyAsync(work->mbs[0], cframe->mbs[0], cframe->mb_width_Y * cframe->mb_height_Y * sizeof(macroblock), cudaMemcpyDeviceToHost, cframe->stream);
 	cudaMemcpyAsync(work->mbs[1], cframe->mbs[1], cframe->mb_width_UV * cframe->mb_height_UV * sizeof(macroblock), cudaMemcpyDeviceToHost, cframe->stream);
 	cudaMemcpyAsync(work->mbs[2], cframe->mbs[2], cframe->mb_width_UV * cframe->mb_height_UV * sizeof(macroblock), cudaMemcpyDeviceToHost, cframe->stream);
 	catchCudaError("CUDA_STORE_MVS");
 }
-void cuda_store_residuals(struct c63_common *cm, workitem_t *work) {
+void cuda_store_residuals(struct c63_common *cm, workitem_t *work)
+{
 	cudaMemcpyAsync(work->residuals->Ydct, cframe->residuals->Ydct, cm->ypw * cm->yph * sizeof(int16_t), cudaMemcpyDeviceToHost, cframe->stream);
 	cudaMemcpyAsync(work->residuals->Udct, cframe->residuals->Udct, cm->upw * cm->uph * sizeof(int16_t), cudaMemcpyDeviceToHost, cframe->stream);
 	cudaMemcpy(work->residuals->Vdct, cframe->residuals->Vdct, cm->vpw * cm->vph * sizeof(int16_t), cudaMemcpyDeviceToHost);
+	//To sync
 	catchCudaError("CUDA_STORE_RESIDUALS");
 }
-extern "C" void cuda_run(struct c63_common *cm, workitem_t *work) {
+extern "C" void cuda_run(struct c63_common *cm, workitem_t *work)
+{
 	cuda_new_frame(cm, work);
 
-	if (!work->keyframe) {
+	if (!work->keyframe)
+	{
 		/* Motion Estimation and compensation */
 		if (cm->use_naive)
 			c63_motion_estimate(cm, cframe);
@@ -135,7 +146,8 @@ extern "C" void cuda_run(struct c63_common *cm, workitem_t *work) {
 	idct_dequantize_frame(cm, cframe);
 }
 
-extern "C" void cuda_stop() {
+extern "C" void cuda_stop()
+{
 	cudaFree(cframe->image->Y);
 	cudaFree(cframe->image->U);
 	cudaFree(cframe->image->V);

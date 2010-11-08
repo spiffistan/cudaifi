@@ -2,7 +2,8 @@
 #include <stdlib.h>
 
 #include "c63.h"
-queue_t* init_queue(void) {
+queue_t* init_queue(void)
+{
 	queue_t *fifo = (queue_t *) malloc(sizeof(queue_t));
 
 	fifo->size = 0;
@@ -20,7 +21,8 @@ queue_t* init_queue(void) {
 	return fifo;
 }
 
-void destroy_queue(queue_t *fifo) {
+void destroy_queue(queue_t *fifo)
+{
 	pthread_mutex_destroy(fifo->mutex);
 	free(fifo->mutex);
 	pthread_cond_destroy(fifo->notFull);
@@ -29,16 +31,19 @@ void destroy_queue(queue_t *fifo) {
 	free(fifo->notEmpty);
 	free(fifo);
 }
-void queue_push(queue_t *fifo, workitem_t *in) {
+void queue_push(queue_t *fifo, workitem_t *in)
+{
 
 	pthread_mutex_lock(fifo->mutex);
 
 	node_t *new = malloc(sizeof(node_t));
 	new->data = in;
-	if (fifo->size != 0) {
+	if (fifo->size != 0)
+	{
 		fifo->tail->next = new;
 		fifo->tail = new;
-	} else {
+	} else
+	{
 		fifo->tail = new;
 		fifo->head = new;
 		fifo->head->next = new;
@@ -49,17 +54,21 @@ void queue_push(queue_t *fifo, workitem_t *in) {
 	pthread_cond_signal(fifo->notEmpty);
 
 }
-workitem_t* queue_pop(queue_t *fifo) {
+workitem_t* queue_pop(queue_t *fifo)
+{
 
 	pthread_mutex_lock(fifo->mutex);
-	if (fifo->size == 0) {
-		if (fifo->done > 0) {
+	if (fifo->size == 0)
+	{
+		if (fifo->done > 0)
+		{
 			pthread_mutex_unlock(fifo->mutex);
 			return 0;
 		}
 		pthread_cond_wait(fifo->notEmpty, fifo->mutex); // WAIT WHILE EMPTY
 
-		if (fifo->done > 0) {
+		if (fifo->done > 0)
+		{
 			pthread_mutex_unlock(fifo->mutex);
 			return 0;
 		}
@@ -75,7 +84,8 @@ workitem_t* queue_pop(queue_t *fifo) {
 	return out;
 }
 
-void queue_stop(queue_t *fifo) {
+void queue_stop(queue_t *fifo)
+{
 	fifo->done = 1;
 	pthread_cond_broadcast(fifo->notEmpty);
 }

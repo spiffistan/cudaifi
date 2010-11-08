@@ -22,7 +22,8 @@
 #include <cuda_runtime.h>
 #include <cuda_runtime_api.h>
 
-struct cuda_frame {
+struct cuda_frame
+{
 	yuv_t *image;
 	size_t image_pitch[3];
 
@@ -75,7 +76,5 @@ texture<uint8_t, 2, cudaReadModeElementType> tex_orig;
 texture<uint8_t, 1, cudaReadModeElementType> tex_pred;
 texture<uint8_t, 2, cudaReadModeElementType> tex_ref;
 texture<uint8_t, 2, cudaReadModeElementType> tex_recons;
-
-
 
 #endif //DEFINE CUDA_UTIL_HCU

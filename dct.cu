@@ -68,10 +68,12 @@ __shared__ float quanttable[64];
 // DCT ////////////////////////////////////////////////////////////////////////
 
 __device__
-void dct1d() {
+void dct1d()
+{
 	int i;
 	float dct_ = 0;
-	for (i = 0; i < 8; ++i) { //BANKCONFLICTS GALORE
+	for (i = 0; i < 8; ++i)
+	{ //BANKCONFLICTS GALORE
 		dct_ += block[BLOCK_START + TY * 8 + i] * dctlookup[i][TX];
 	}
 	dct[BLOCK_START + TY * 8 + TX] = dct_;
@@ -79,10 +81,12 @@ void dct1d() {
 }
 
 __device__
-void idct1d() {
+void idct1d()
+{
 	int i;
 	float idct = 0;
-	for (i = 0; i < 8; ++i) {
+	for (i = 0; i < 8; ++i)
+	{
 		idct += block[BLOCK_START + TY * 8 + i] * idctlookup[i][TX];
 	}
 
@@ -93,7 +97,8 @@ void idct1d() {
 // TRANSPOSE //////////////////////////////////////////////////////////////////
 
 __device__
-void transpose() {
+void transpose()
+{
 	block[BLOCK_START + TID] = dct[BLOCK_START + TX * 8 + TY];
 	__syncthreads();
 }
@@ -101,7 +106,8 @@ void transpose() {
 // SCALE //////////////////////////////////////////////////////////////////////
 
 __device__
-void scale() {
+void scale()
+{
 	float a1 = !TY ? ISQRT2 : 1.0f;
 	float a2 = !TX ? ISQRT2 : 1.0f;
 
@@ -111,7 +117,8 @@ void scale() {
 }
 
 __device__
-void unscale() {
+void unscale()
+{
 	float a1 = !TY ? ISQRT2 : 1.0f;
 	float a2 = !TX ? ISQRT2 : 1.0f;
 
@@ -123,7 +130,8 @@ void unscale() {
 // QUANTIZE ///////////////////////////////////////////////////////////////////
 
 __device__
-void quantize() {
+void quantize()
+{
 	uint8_t u = zigzag_U[TID];
 	uint8_t v = zigzag_V[TID];
 
@@ -135,7 +143,8 @@ void quantize() {
 }
 
 __device__
-void dequantize() {
+void dequantize()
+{
 	uint8_t u = zigzag_U[TID];
 	uint8_t v = zigzag_V[TID];
 
@@ -155,7 +164,8 @@ void dequantize() {
 #define TEX_FETCH ((DY * BY * width) + (DX * DY * DZ * BX) + GLOBAL_TID)
 
 __global__
-void dct_quantize_cuda(int width, int height, int16_t *out_data, uint8_t *qtable) {
+void dct_quantize_cuda(int width, int height, int16_t *out_data, uint8_t *qtable)
+{
 	// Fetch from texture memory into shared memory
 	block[GLOBAL_TID] = __int2float_rz(tex2D(tex_orig, TEX_SELECT_X, TEX_SELECT_Y) - tex1Dfetch(tex_pred, TEX_FETCH));
 
@@ -178,7 +188,8 @@ void dct_quantize_cuda(int width, int height, int16_t *out_data, uint8_t *qtable
 }
 
 __global__
-void idct_dequantize_cuda(int width, int height, size_t pitch, uint8_t *out_data, uint8_t *qtable) {
+void idct_dequantize_cuda(int width, int height, size_t pitch, uint8_t *out_data, uint8_t *qtable)
+{
 	// Fetch from texture memory into shared memory
 	block[GLOBAL_TID] = tex1Dfetch(tex_residual, DY * BY * width + BX * DX * DY * DZ + GLOBAL_TID);
 
@@ -208,7 +219,8 @@ void idct_dequantize_cuda(int width, int height, size_t pitch, uint8_t *out_data
 		out_data[TEX_SELECT_Y * pitch + TEX_SELECT_X] = tmp;
 }
 
-extern "C" void dct_quantize_frame(c63_common *cm, struct cuda_frame *cframe) {
+extern "C" void dct_quantize_frame(c63_common *cm, struct cuda_frame *cframe)
+{
 	cudaBindTexture2D(0, &tex_orig, cframe->image->Y, &tex_orig.channelDesc, cm->ypw, cm->yph, cframe->image_pitch[0]);
 	cudaBindTexture(0, &tex_pred, cframe->predicted->Y, &tex_pred.channelDesc, cm->ypw * cm->yph);
 	dct_quantize_cuda<<<cframe->dct_blockDim_Y, cframe->dct_threadDim,0,cframe->stream>>>(cm->ypw,cm->yph,cframe->residuals->Ydct,cframe->qtables[0]);
@@ -222,7 +234,8 @@ extern "C" void dct_quantize_frame(c63_common *cm, struct cuda_frame *cframe) {
 	dct_quantize_cuda<<<cframe->dct_blockDim_UV, cframe->dct_threadDim,0,cframe->stream>>>(cm->vpw,cm->vph,cframe->residuals->Vdct,cframe->qtables[2]);
 }
 
-extern "C" void idct_dequantize_frame(c63_common *cm, struct cuda_frame *cframe) {
+extern "C" void idct_dequantize_frame(c63_common *cm, struct cuda_frame *cframe)
+{
 	cudaBindTexture(0, &tex_residual, cframe->residuals->Ydct, &tex_residual.channelDesc, cm->ypw * cm->yph * sizeof(int16_t));
 	cudaBindTexture(0, &tex_pred, cframe->predicted->Y, &tex_pred.channelDesc, cm->ypw * cm->yph);
 	idct_dequantize_cuda<<<cframe->dct_blockDim_Y, cframe->dct_threadDim,0,cframe->stream>>>(cm->ypw,cm->yph,cframe->curr_recons_pitch[0],cframe->curr_recons->Y,cframe->qtables[0]);

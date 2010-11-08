@@ -32,7 +32,8 @@ extern int optind;
 extern char *optarg;
 
 //thread args
-struct r_args {
+struct r_args
+{
 	uint32_t max_frames;
 	struct c63_common *cm;
 	FILE *infile;
@@ -40,13 +41,15 @@ struct r_args {
 	queue_t *available;
 } r_args;
 
-struct w_args {
+struct w_args
+{
 	queue_t *output;
 	queue_t *available;
 	struct c63_common *cm;
 } w_args;
 
-struct c_args {
+struct c_args
+{
 	queue_t *input;
 	queue_t *output;
 	struct c63_common *cm;
@@ -60,31 +63,36 @@ struct c_args {
 // READ FILE //////////////////////////////////////////////////////////////////
 
 /* Read YUV frames */
-static yuv_t* read_yuv(FILE *file, yuv_t* image) {
+static yuv_t* read_yuv(FILE *file, yuv_t* image)
+{
 	size_t len = 0;
 
 	/* Read Y' */
 	len += fread(image->Y, 1, width * height, file);
-	if (ferror(file)) {
+	if (ferror(file))
+	{
 		perror("ferror");
 		exit(EXIT_FAILURE);
 	}
 
 	/* Read U */
 	len += fread(image->U, 1, (width * height) / 4, file);
-	if (ferror(file)) {
+	if (ferror(file))
+	{
 		perror("ferror");
 		exit(EXIT_FAILURE);
 	}
 
 	/* Read V */
 	len += fread(image->V, 1, (width * height) / 4, file);
-	if (ferror(file)) {
+	if (ferror(file))
+	{
 		perror("ferror");
 		exit(EXIT_FAILURE);
 	}
 
-	if (len != width * height * 1.5) {
+	if (len != width * height * 1.5)
+	{
 		fprintf(stderr, "Reached end of file.\n");
 		return NULL;
 	}
@@ -95,7 +103,8 @@ static yuv_t* read_yuv(FILE *file, yuv_t* image) {
 // ENCODE /////////////////////////////////////////////////////////////////////
 
 
-struct c63_common* init_c63_enc(int width, int height) {
+struct c63_common* init_c63_enc(int width, int height)
+{
 	int i;
 	struct c63_common *cm = calloc(1, sizeof(struct c63_common));
 
@@ -118,7 +127,8 @@ struct c63_common* init_c63_enc(int width, int height) {
 
 
 	/* Initialize quantization tables */
-	for (i = 0; i < 64; ++i) {
+	for (i = 0; i < 64; ++i)
+	{
 		cm->quanttbl[0][i] = yquanttbl_def[i] / (cm->qp / 10.0);
 		cm->quanttbl[1][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
 		cm->quanttbl[2][i] = uvquanttbl_def[i] / (cm->qp / 10.0);
@@ -127,7 +137,8 @@ struct c63_common* init_c63_enc(int width, int height) {
 	return cm;
 }
 
-static void print_help() {
+static void print_help()
+{
 	fprintf(stderr, "Usage: ./c63enc [options] input_file\n");
 	fprintf(stderr, "Commandline options:\n");
 	fprintf(stderr, "  -N                             choose naive motion estimation\n");
@@ -140,7 +151,8 @@ static void print_help() {
 	exit(EXIT_FAILURE);
 }
 
-void reset_workitem(workitem_t *w, struct c63_common *cm) {
+void reset_workitem(workitem_t *w, struct c63_common *cm)
+{
 	memset(w->image->Y, 0, cm->width * cm->height);
 	memset(w->image->U, 0, cm->width * cm->height / 4);
 	memset(w->image->V, 0, cm->width * cm->height / 4);
@@ -153,10 +165,12 @@ void reset_workitem(workitem_t *w, struct c63_common *cm) {
 
 }
 
-queue_t* init_workitems(struct c63_common *cm) {
+queue_t* init_workitems(struct c63_common *cm)
+{
 	queue_t* q = init_queue();
 	int i;
-	for (i = 0; i < MAX_FRAMES; i++) {
+	for (i = 0; i < MAX_FRAMES; i++)
+	{
 		workitem_t *w;
 		cudaMallocHost((void**) &w, sizeof(workitem_t));
 
@@ -173,23 +187,26 @@ queue_t* init_workitems(struct c63_common *cm) {
 		cudaMallocHost((void**) &w->mbs[0], cm->mb_cols * cm->mb_cols * sizeof(struct macroblock));
 		cudaMallocHost((void**) &w->mbs[1], cm->mb_cols * cm->mb_cols * sizeof(struct macroblock));
 		cudaMallocHost((void**) &w->mbs[2], cm->mb_cols * cm->mb_cols * sizeof(struct macroblock));
-		reset_workitem(w,cm);
+		reset_workitem(w, cm);
 		queue_push(q, w);
 	}
 	return q;
 }
 
-
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
 	int c;
 	yuv_t *image;
 	uint8_t naive = 0;
-	if (argc == 1) {
+	if (argc == 1)
+	{
 		print_help();
 	}
 
-	while ((c = getopt(argc, argv, "h:w:o:f:N")) != -1) {
-		switch (c) {
+	while ((c = getopt(argc, argv, "h:w:o:f:N")) != -1)
+	{
+		switch (c)
+		{
 		case 'h':
 			height = atoi(optarg);
 			break;
@@ -211,13 +228,15 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	if (optind >= argc) {
+	if (optind >= argc)
+	{
 		fprintf(stderr, "Error getting program options, try --help.\n");
 		exit(EXIT_FAILURE);
 	}
 
 	outfile = fopen(output_file, "wb");
-	if (outfile == NULL) {
+	if (outfile == NULL)
+	{
 		perror("fopen");
 		exit(EXIT_FAILURE);
 	}
@@ -242,7 +261,8 @@ int main(int argc, char **argv) {
 
 	FILE *infile = fopen(input_file, "rb");
 
-	if (infile == NULL) {
+	if (infile == NULL)
+	{
 		perror("fopen");
 		exit(EXIT_FAILURE);
 	}
@@ -275,7 +295,7 @@ int main(int argc, char **argv) {
 	pthread_create(&reader, NULL, reader_thread, reader_args);
 	pthread_create(&writer, NULL, writer_thread, writer_args);
 
-	encoder_thread(input_queue,output_queue,cm);
+	encoder_thread(input_queue, output_queue, cm);
 
 	pthread_join(reader, NULL);
 	pthread_join(writer, NULL);
@@ -284,7 +304,8 @@ int main(int argc, char **argv) {
 	destroy_queue(input_queue);
 	destroy_queue(output_queue);
 
-	while(available->size) {
+	while (available->size)
+	{
 		workitem_t* w = queue_pop(available);
 		cudaFree(w->image->Y);
 		cudaFree(w->image->U);
@@ -312,10 +333,12 @@ int main(int argc, char **argv) {
 
 // PTHREADS ///////////////////////////////////////////////////////////////////
 
-void *reader_thread(void *a) {
+void *reader_thread(void *a)
+{
 	struct r_args *args = (struct r_args *) a;
 	int framecounter = 0;
-	while (!feof(args->infile) && (framecounter < args->max_frames || args->max_frames == 0)) {
+	while (!feof(args->infile) && (framecounter < args->max_frames || args->max_frames == 0))
+	{
 
 		workitem_t *w = queue_pop(args->available);
 		read_yuv(args->infile, w->image);
@@ -329,13 +352,16 @@ void *reader_thread(void *a) {
 	return (NULL);
 }
 
-void *writer_thread(void *a) {
+void *writer_thread(void *a)
+{
 	struct w_args *args = (struct w_args *) a;
 
-	while (1) {
+	while (1)
+	{
 		workitem_t *w = queue_pop(args->output);
 
-		if (!w) {
+		if (!w)
+		{
 			break;
 		}
 		write_frame(args->cm, w);
@@ -348,8 +374,10 @@ void *writer_thread(void *a) {
 	return (NULL);
 }
 
-void encoder_thread(queue_t* input, queue_t* output, struct c63_common *cm) {
-	while (1) {
+void encoder_thread(queue_t* input, queue_t* output, struct c63_common *cm)
+{
+	while (1)
+	{
 		/* Check if keyframe */
 
 		workitem_t *w = queue_pop(input);
@@ -357,7 +385,8 @@ void encoder_thread(queue_t* input, queue_t* output, struct c63_common *cm) {
 			break;
 		fprintf(stderr, "Encoding frame %d, ", w->framenum);
 
-		if (w->framenum % cm->keyframe_interval == 0) {
+		if (w->framenum % cm->keyframe_interval == 0)
+		{
 			w->keyframe = 1;
 			fprintf(stderr, " (keyframe) ");
 		} else

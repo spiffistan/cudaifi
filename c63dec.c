@@ -21,22 +21,28 @@
 #define HUFF_AC_SIZE 11
 
 /* Decode VLC token */
-static uint8_t get_vlc_token(struct entropy_ctx *c, uint16_t *table, uint8_t *table_sz, int tablelen) {
+static uint8_t get_vlc_token(struct entropy_ctx *c, uint16_t *table, uint8_t *table_sz, int tablelen)
+{
 	uint16_t bits = 0;
 
 	int i, n;
-	for (n = 1; n <= 16; ++n) {
+	for (n = 1; n <= 16; ++n)
+	{
 		bits <<= 1;
 		bits |= get_bits(c, 1);
 
 		/* See if this string matches a token in VLC table */
-		for (i = 0; i < tablelen; ++i) {
-			if (table_sz[i] < n) {
+		for (i = 0; i < tablelen; ++i)
+		{
+			if (table_sz[i] < n)
+			{
 				/* Too small token. */
 				continue;
 			}
-			if (table_sz[i] == n) {
-				if (bits == (table[i] & ((1 << n) - 1))) {
+			if (table_sz[i] == n)
+			{
+				if (bits == (table[i] & ((1 << n) - 1)))
+				{
 					/* Found it */
 					return i;
 				}
@@ -53,33 +59,43 @@ static uint8_t get_vlc_token(struct entropy_ctx *c, uint16_t *table, uint8_t *ta
  of our ACVLC_Size table. Does not work with a general table, so use the
  unoptimized get_vlc_token. A better approach would be to use an index table.
  */
-static uint8_t get_vlc_token_ac(struct entropy_ctx *c, uint16_t table[HUFF_AC_ZERO][HUFF_AC_SIZE], uint8_t table_sz[HUFF_AC_ZERO][HUFF_AC_SIZE]) {
+static uint8_t get_vlc_token_ac(struct entropy_ctx *c, uint16_t table[HUFF_AC_ZERO][HUFF_AC_SIZE], uint8_t table_sz[HUFF_AC_ZERO][HUFF_AC_SIZE])
+{
 	uint16_t bits = 0;
 
 	int n;
 	int x, y;
-	for (n = 1; n <= 16; ++n) {
+	for (n = 1; n <= 16; ++n)
+	{
 		bits <<= 1;
 		bits |= get_bits(c, 1);
 
 		uint16_t mask = (1 << n) - 1;
 
-		for (x = 1; x < HUFF_AC_SIZE; ++x) {
-			for (y = 0; y < HUFF_AC_ZERO; ++y) {
-				if (table_sz[y][x] < n) continue;
-				else if (table_sz[y][x] > n) break;
-				else if (bits == (table[y][x] & mask)) {
+		for (x = 1; x < HUFF_AC_SIZE; ++x)
+		{
+			for (y = 0; y < HUFF_AC_ZERO; ++y)
+			{
+				if (table_sz[y][x] < n)
+					continue;
+				else if (table_sz[y][x] > n)
+					break;
+				else if (bits == (table[y][x] & mask))
+				{
 					/* Found it */
 					return y * HUFF_AC_SIZE + x;
 				}
 			}
 
-			if (table_sz[x][0] > n) break;
+			if (table_sz[x][0] > n)
+				break;
 		}
 
 		/* Check if it's a special token (bitsize 0) */
-		for (y = 0; y < HUFF_AC_ZERO; y += (HUFF_AC_ZERO - 1)) {
-			if (table_sz[y][0] == n && bits == (table[y][0] & mask)) {
+		for (y = 0; y < HUFF_AC_ZERO; y += (HUFF_AC_ZERO - 1))
+		{
+			if (table_sz[y][0] == n && bits == (table[y][0] & mask))
+			{
 				/* Found it */
 				return y * HUFF_AC_SIZE;
 			}
@@ -91,10 +107,12 @@ static uint8_t get_vlc_token_ac(struct entropy_ctx *c, uint16_t table[HUFF_AC_ZE
 }
 
 /* Decode sign of value from VLC. See Figure F.12 in spec. */
-static int16_t extend_sign(int16_t v, int sz) {
+static int16_t extend_sign(int16_t v, int sz)
+{
 	int vt = 1 << (sz - 1);
 
-	if (v >= vt) return v;
+	if (v >= vt)
+		return v;
 
 	int range = (1 << sz) - 1;
 
@@ -103,7 +121,8 @@ static int16_t extend_sign(int16_t v, int sz) {
 	return v;
 }
 
-static void read_block(struct c63_common *cm, int16_t *out_data, uint32_t width, uint32_t height, uint32_t uoffset, uint32_t voffset, int16_t *prev_DC, int32_t cc, int channel) {
+static void read_block(struct c63_common *cm, int16_t *out_data, uint32_t width, uint32_t height, uint32_t uoffset, uint32_t voffset, int16_t *prev_DC, int32_t cc, int channel)
+{
 	uint8_t size;
 	int i, num_zero = 0;
 
@@ -113,12 +132,15 @@ static void read_block(struct c63_common *cm, int16_t *out_data, uint32_t width,
 	/* Use inter pred? */
 	mb->use_mv = get_bits(&cm->e_ctx, 1);
 
-	if (mb->use_mv) {
+	if (mb->use_mv)
+	{
 		int reuse_prev_mv = get_bits(&cm->e_ctx, 1);
-		if (reuse_prev_mv) {
+		if (reuse_prev_mv)
+		{
 			mb->mv_x = (mb - 1)->mv_x;
 			mb->mv_y = (mb - 1)->mv_y;
-		} else {
+		} else
+		{
 			int16_t val;
 			size = get_vlc_token(&cm->e_ctx, MVVLC, MVVLC_Size, ARRAY_SIZE(MVVLC));
 			val = get_bits(&cm->e_ctx, size);
@@ -146,7 +168,8 @@ static void read_block(struct c63_common *cm, int16_t *out_data, uint32_t width,
 	*prev_DC = block[0];
 
 	/* Decode AC RLE */
-	for (i = 1; i < 64; ++i) {
+	for (i = 1; i < 64; ++i)
+	{
 		uint16_t token = get_vlc_token_ac(&cm->e_ctx, ACVLC[cc], ACVLC_Size[cc]);
 
 		num_zero = token / 11;
@@ -154,11 +177,13 @@ static void read_block(struct c63_common *cm, int16_t *out_data, uint32_t width,
 
 		i += num_zero;
 
-		if (num_zero == 15 && size == 0) {
+		if (num_zero == 15 && size == 0)
+		{
 			continue;
 		}
 
-		if (num_zero == 0 && size == 0) break;
+		if (num_zero == 0 && size == 0)
+			break;
 
 		int16_t ac = get_bits(&cm->e_ctx, size);
 
@@ -171,7 +196,8 @@ static void read_block(struct c63_common *cm, int16_t *out_data, uint32_t width,
 	++blocknum;
 	printf("Dump block %d:\n", blocknum);
 
-	for(i=0; i<8; ++i) {
+	for(i=0; i<8; ++i)
+	{
 		for (j=0; j<8; ++j)
 		printf(", %5d", block[i*8+j]);
 		printf("\n");
@@ -180,13 +206,16 @@ static void read_block(struct c63_common *cm, int16_t *out_data, uint32_t width,
 #endif
 }
 
-static void read_interleaved_data_MCU(struct c63_common *cm, int16_t *dct, uint32_t wi, uint32_t he, uint32_t h, uint32_t v, uint32_t x, uint32_t y, int16_t *prev_DC, int32_t cc, int channel) {
+static void read_interleaved_data_MCU(struct c63_common *cm, int16_t *dct, uint32_t wi, uint32_t he, uint32_t h, uint32_t v, uint32_t x, uint32_t y, int16_t *prev_DC, int32_t cc, int channel)
+{
 	uint32_t i, j, ii, jj;
-	for (j = y * v * 8; j < (y + 1) * v * 8; j += 8) {
+	for (j = y * v * 8; j < (y + 1) * v * 8; j += 8)
+	{
 		jj = he - 8;
 		jj = MIN(j, jj);
 
-		for (i = x * h * 8; i < (x + 1) * h * 8; i += 8) {
+		for (i = x * h * 8; i < (x + 1) * h * 8; i += 8)
+		{
 			ii = wi - 8;
 			ii = MIN(i, ii);
 
@@ -195,16 +224,20 @@ static void read_interleaved_data_MCU(struct c63_common *cm, int16_t *dct, uint3
 	}
 }
 
-void read_interleaved_data(struct c63_common *cm) {
-	int16_t prev_DC[3] = { 0, 0, 0 };
+void read_interleaved_data(struct c63_common *cm)
+{
+	int16_t prev_DC[3] =
+	{ 0, 0, 0 };
 	int u, v;
 
 	uint32_t ublocks = (uint32_t)(ceil(cm->ypw / (float) (8.0f * 2)));
 	uint32_t vblocks = (uint32_t)(ceil(cm->yph / (float) (8.0f * 2)));
 
 	/* Write the MCU's interleaved */
-	for (v = 0; v < vblocks; ++v) {
-		for (u = 0; u < ublocks; ++u) {
+	for (v = 0; v < vblocks; ++v)
+	{
+		for (u = 0; u < ublocks; ++u)
+		{
 			read_interleaved_data_MCU(cm, cm->curframe->residuals->Ydct, cm->ypw, cm->yph, YX, YY, u, v, &prev_DC[0], 0, 0);
 			read_interleaved_data_MCU(cm, cm->curframe->residuals->Udct, cm->upw, cm->uph, UX, UY, u, v, &prev_DC[1], 1, 1);
 			read_interleaved_data_MCU(cm, cm->curframe->residuals->Vdct, cm->vpw, cm->vph, VX, VY, u, v, &prev_DC[2], 1, 2);
@@ -213,14 +246,17 @@ void read_interleaved_data(struct c63_common *cm) {
 }
 
 // Define quantization tables
-void parse_dqt(struct c63_common *cm) {
+void parse_dqt(struct c63_common *cm)
+{
 	uint16_t size;
 	size = (get_byte(cm->e_ctx.fp) << 8) | get_byte(cm->e_ctx.fp);
 
 	int i;
-	for (i = 0; i < 3; ++i) {
+	for (i = 0; i < 3; ++i)
+	{
 		int idx = get_byte(cm->e_ctx.fp);
-		if (idx != i) {
+		if (idx != i)
+		{
 			fprintf(stderr, "DQT: Expected %d - got %d\n", i, idx);
 			exit(1);
 		}
@@ -230,7 +266,8 @@ void parse_dqt(struct c63_common *cm) {
 }
 
 // Start of scan
-void parse_sos(struct c63_common *cm) {
+void parse_sos(struct c63_common *cm)
+{
 	uint16_t size;
 	size = (get_byte(cm->e_ctx.fp) << 8) | get_byte(cm->e_ctx.fp);
 
@@ -241,12 +278,14 @@ void parse_sos(struct c63_common *cm) {
 }
 
 // Baseline DCT
-void parse_sof0(struct c63_common *cm) {
+void parse_sof0(struct c63_common *cm)
+{
 	uint16_t size;
 	size = (get_byte(cm->e_ctx.fp) << 8) | get_byte(cm->e_ctx.fp);
 
 	uint8_t precision = get_byte(cm->e_ctx.fp);
-	if (precision != 8) {
+	if (precision != 8)
+	{
 		printf("Only 8-bit precision supported\n");
 		exit(1);
 	}
@@ -259,7 +298,8 @@ void parse_sof0(struct c63_common *cm) {
 	read_bytes(cm->e_ctx.fp, buf, 10);
 
 	/* First frame? */
-	if (cm->framenum == 0) {
+	if (cm->framenum == 0)
+	{
 		cm->width = width;
 		cm->height = height;
 
@@ -286,7 +326,8 @@ void parse_sof0(struct c63_common *cm) {
 }
 
 // Define Huffman tables
-void parse_dht(struct c63_common *cm) {
+void parse_dht(struct c63_common *cm)
+{
 	uint16_t size;
 	size = (get_byte(cm->e_ctx.fp) << 8) | get_byte(cm->e_ctx.fp);
 
@@ -295,35 +336,46 @@ void parse_dht(struct c63_common *cm) {
 	read_bytes(cm->e_ctx.fp, buf, size - 2);
 }
 
-int parse_c63_frame(struct c63_common *cm) {
+int parse_c63_frame(struct c63_common *cm)
+{
 	// SOI
-	if (get_byte(cm->e_ctx.fp) != MARKER_START || get_byte(cm->e_ctx.fp) != MARKER_SOI) {
+	if (get_byte(cm->e_ctx.fp) != MARKER_START || get_byte(cm->e_ctx.fp) != MARKER_SOI)
+	{
 		fprintf(stderr, "Not an JPEG file\n");
 		exit(1);
 	}
 
-	while (1) {
+	while (1)
+	{
 		int c;
 		c = get_byte(cm->e_ctx.fp);
 
-		if (c == 0) c = get_byte(cm->e_ctx.fp);
+		if (c == 0)
+			c = get_byte(cm->e_ctx.fp);
 
-		if (c != MARKER_START) {
+		if (c != MARKER_START)
+		{
 			fprintf(stderr, "Expected marker.\n");
 			exit(1);
 		}
 
 		uint8_t marker = get_byte(cm->e_ctx.fp);
 
-		if (marker == MARKER_DQT) parse_dqt(cm);
-		else if (marker == MARKER_SOS) {
+		if (marker == MARKER_DQT)
+			parse_dqt(cm);
+		else if (marker == MARKER_SOS)
+		{
 			parse_sos(cm);
 			read_interleaved_data(cm);
 			cm->e_ctx.bit_buffer = cm->e_ctx.bit_buffer_width = 0;
-		} else if (marker == MARKER_SOF0) parse_sof0(cm);
-		else if (marker == MARKER_DHT) parse_dht(cm);
-		else if (marker == MARKER_EOI) return 1;
-		else {
+		} else if (marker == MARKER_SOF0)
+			parse_sof0(cm);
+		else if (marker == MARKER_DHT)
+			parse_dht(cm);
+		else if (marker == MARKER_EOI)
+			return 1;
+		else
+		{
 			fprintf(stderr, "Invalid marker: 0x%02x\n", marker);
 			exit(1);
 		}
@@ -333,10 +385,12 @@ int parse_c63_frame(struct c63_common *cm) {
 	return 1;
 }
 
-void decode_c63_frame(struct c63_common *cm, FILE *fout) {
+void decode_c63_frame(struct c63_common *cm, FILE *fout)
+{
 
 	/* Motion Compensation */
-	if (!cm->curframe->keyframe) {
+	if (!cm->curframe->keyframe)
+	{
 		c63_motion_compensate(cm);
 	}
 	/* Decode residuals */
@@ -354,7 +408,8 @@ void decode_c63_frame(struct c63_common *cm, FILE *fout) {
 	++cm->framenum;
 }
 
-static void print_help() {
+static void print_help()
+{
 	fprintf(stderr, "Usage: ./c63dec input.c63 output.yuv\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "Tip! Use vlc to playback raw YUV file: vlc --rawvid-width 352 --rawvid-height 288 foreman.yuv\n");
@@ -362,20 +417,24 @@ static void print_help() {
 
 	exit(EXIT_FAILURE);
 }
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
 
-	if (argc < 3 || argc > 3) {
+	if (argc < 3 || argc > 3)
+	{
 		print_help();
 	}
 
 	FILE *fin = fopen(argv[1], "rb");
-	if (!fin) {
+	if (!fin)
+	{
 		perror("fopen");
 		exit(1);
 	}
 
 	FILE *fout = fopen(argv[2], "wb");
-	if (!fout) {
+	if (!fout)
+	{
 		perror("fopen");
 		exit(1);
 	}
@@ -384,7 +443,8 @@ int main(int argc, char **argv) {
 	cm->e_ctx.fp = fin;
 
 	int framenum = 0;
-	while (!feof(fin)) {
+	while (!feof(fin))
+	{
 		printf("Decoding frame %d\n", framenum++);
 
 		parse_c63_frame(cm);
