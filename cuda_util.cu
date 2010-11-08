@@ -38,12 +38,14 @@ extern "C" void cuda_init(c63_common *cm)
 		cframe->me_threadDim = dim3(32, 16, 1);
 		cframe->me_blockDim_Y = dim3(cframe->mb_width_Y, cframe->mb_height_Y);
 		cframe->me_blockDim_UV = dim3(cframe->mb_width_UV, cframe->mb_height_UV);
-	} else
+	} 
+	else
 	{
 		cframe->me_threadDim = dim3(8, 4, 4);
 		cframe->me_blockDim_Y = dim3(ceil(cframe->mb_width_Y / 4.0f), ceil(cframe->mb_height_Y / 4.0f));
 		cframe->me_blockDim_UV = dim3(ceil(cframe->mb_width_UV / 4.0f), ceil(cframe->mb_height_UV / 4.0f));
 	}
+	
 	cudaMallocPitch(&cframe->image->Y, &cframe->image_pitch[0], cm->ypw, cm->yph);
 	cudaMallocPitch(&cframe->image->U, &cframe->image_pitch[1], cm->upw, cm->uph);
 	cudaMallocPitch(&cframe->image->V, &cframe->image_pitch[2], cm->vpw, cm->vph);
@@ -77,8 +79,8 @@ extern "C" void cuda_init(c63_common *cm)
 	cudaMemcpy(cframe->qtables[0], cm->quanttbl[0], 64 * sizeof(uint8_t), cudaMemcpyHostToDevice);
 	cudaMemcpy(cframe->qtables[1], cm->quanttbl[1], 64 * sizeof(uint8_t), cudaMemcpyHostToDevice);
 	cudaMemcpy(cframe->qtables[2], cm->quanttbl[2], 64 * sizeof(uint8_t), cudaMemcpyHostToDevice);
+	
 	catchCudaError("CUDA_INIT");
-
 }
 
 void cuda_new_frame(c63_common *cm, workitem_t *work)
@@ -122,7 +124,7 @@ void cuda_store_residuals(struct c63_common *cm, workitem_t *work)
 	cudaMemcpyAsync(work->residuals->Ydct, cframe->residuals->Ydct, cm->ypw * cm->yph * sizeof(int16_t), cudaMemcpyDeviceToHost, cframe->stream);
 	cudaMemcpyAsync(work->residuals->Udct, cframe->residuals->Udct, cm->upw * cm->uph * sizeof(int16_t), cudaMemcpyDeviceToHost, cframe->stream);
 	cudaMemcpy(work->residuals->Vdct, cframe->residuals->Vdct, cm->vpw * cm->vph * sizeof(int16_t), cudaMemcpyDeviceToHost);
-	//To sync
+
 	catchCudaError("CUDA_STORE_RESIDUALS");
 }
 extern "C" void cuda_run(struct c63_common *cm, workitem_t *work)
@@ -136,6 +138,7 @@ extern "C" void cuda_run(struct c63_common *cm, workitem_t *work)
 			c63_motion_estimate(cm, cframe);
 		else
 			c63_motion_estimate_log(cm, cframe);
+			
 		cuda_store_mvs(cm, work);
 	}
 
