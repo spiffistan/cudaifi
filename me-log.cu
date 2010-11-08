@@ -10,6 +10,7 @@
 #include "c63.h"
 #include "cuda_util.hcu"
 
+#define BIX (TY * 4 + TZ)
 #define MX (blockIdx.x * 8)
 #define MY (blockIdx.y * 8)
 #define RANGE 16
@@ -35,10 +36,9 @@ typedef struct point {
 
 __shared__ uint8_t orig[16][64];
 __shared__ min_helper current_best[16];
-__shared__ min_helper current[16][8];
-__shared__ point_t direction[8];
+__shared__ min_helper current[16][16];
+__shared__ point_t direction[16][16];
 
-#define BIX (TY * 4 + TZ)
 __device__
 int16_t reducesum() {
 	if (TX < 4) {
@@ -66,14 +66,11 @@ void reducemin() {
 			current[BIX][TX] = current[BIX][TX + 4];
 		}
 	}
-	__syncthreads();
 	if (TX < 2) {
 		if (current[BIX][TX].value > current[BIX][TX + 2].value) {
 			current[BIX][TX] = current[BIX][TX + 2];
 		}
 	}
-	__syncthreads();
-
 	if (TX < 1) {
 		if (current[BIX][TX].value > current[BIX][TX + 1].value) {
 			current[BIX][TX] = current[BIX][TX + 1];
@@ -82,39 +79,38 @@ void reducemin() {
 			current_best[BIX] = current[BIX][0];
 		}
 	}
-	__syncthreads();
-
 }
 
 __device__
 void log_step(int step_size, point_t orig_pos, int width, int height) {
-	current[BIX][TX].x = current_best[BIX].x + step_size * direction[TX].x;
-	current[BIX][TX].y = current_best[BIX].y + step_size * direction[TX].y;
+	current[BIX][TX].x = current_best[BIX].x + step_size * direction[BIX][TX].x;
+	current[BIX][TX].y = current_best[BIX].y + step_size * direction[BIX][TX].y;
 	point_t real_pos;
 	real_pos.x = orig_pos.x + current[BIX][TX].x;
 	real_pos.y = orig_pos.y + current[BIX][TX].y;
-	if (real_pos.x < 0 || real_pos.y < 0 || real_pos.x >= (width - 8) || real_pos.y >= (height - 8)) {
-		current[BIX][TX].value = 60000;
-	} else {
-		//calculate USAD
-		current[BIX][TX].value = 0;
-		for (int i = 0; i < 8; i++) {
-			for (int j = 0; j < 8; j++) {
-				current[BIX][TX].value = __usad(orig[BIX][i * 8 + j], tex2D(tex_ref, orig_pos.x + current[BIX][TX].x + j, orig_pos.y + current[BIX][TX].y + i), current[BIX][TX].value);
-			}
+	//calculate USAD
+	current[BIX][TX].value = 0;
+	#pragma unroll
+	for (int i = 0; i < 8; i++) {
+		#pragma unroll
+		for (int j = 0; j < 8; j++) {
+			current[BIX][TX].value = __usad(orig[BIX][i * 8 + j], tex2D(tex_ref, orig_pos.x + current[BIX][TX].x + j, orig_pos.y + current[BIX][TX].y + i), current[BIX][TX].value);
 		}
+	}
+	if (real_pos.x < 0 || real_pos.y < 0 || real_pos.x >= (width - 8) || real_pos.y >= (height - 8)) {
+		current[BIX][TX].value = 65535;
 	}
 	__syncthreads();
 	reducemin();
-}
 
+}
 ///////////////////////////////////////////////////////////////////////////////
 // CUDA KERNELS GLOBAL ////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 //threadDim(8,1,1)
 
 __global__
-void cuda_me_log(int width, int height,int mb_width, int mb_height,  macroblock * mb, uint8_t *prediction) {
+void cuda_me_log(int width, int height, int mb_width, int mb_height, macroblock * mb, uint8_t *prediction) {
 
 	point_t orig_pos;
 	orig_pos.x = (BX * DY + TY) * 8;
@@ -140,28 +136,28 @@ void cuda_me_log(int width, int height,int mb_width, int mb_height,  macroblock 
 
 	//set directions
 	if (TX < 3) {
-		direction[TX].y = -1;
+		direction[BIX][TX].y = -1;
 	} else if (TX > 4) {
-		direction[TX].y = 1;
+		direction[BIX][TX].y = 1;
 	} else {
-		direction[TX].y = 0;
+		direction[BIX][TX].y = 0;
 	}
 
 	if (TX == 0 || TX == 3 || TX == 5) {
-		direction[TX].x = -1;
+		direction[BIX][TX].x = -1;
 	} else if (TX == 2 || TX == 4 || TX == 7) {
-		direction[TX].x = 1;
+		direction[BIX][TX].x = 1;
 	} else {
-		direction[TX].x = 0;
+		direction[BIX][TX].x = 0;
 	}
 
-	log_step(9, orig_pos, width, height);
+	log_step(8, orig_pos, width, height);
 	log_step(4, orig_pos, width, height);
 	log_step(2, orig_pos, width, height);
 	log_step(1, orig_pos, width, height);
 
 	if (TX == 0) {
-		#define MB_IX (BY * DZ + TZ) * mb_width + BX * DY + TY
+#define MB_IX (BY * DZ + TZ) * mb_width + BX * DY + TY
 		mb[MB_IX].mv_x = current_best[BIX].x;
 		mb[MB_IX].mv_y = current_best[BIX].y;
 		mb[MB_IX].use_mv = 1;
@@ -174,31 +170,18 @@ void cuda_me_log(int width, int height,int mb_width, int mb_height,  macroblock 
 
 }
 
-__global__
-void mc_block_cuda(int mb_width, int width, int height, uint8_t *predicted, macroblock* mbs) {
-
-	macroblock mb = mbs[BY * mb_width + BX * DZ + TZ];
-	//write to global
-	int y = (DY * BY + TY);
-	int x = BX * DX * DZ + 8 * TZ + TX;
-
-	if (x < width && y < height)
-		predicted[(DY * BY) * width + BX * DX * DZ * DY + TZ * 64 + TY * 8 + TX] = tex2D(tex_recons, x + mb.mv_x, y + mb.mv_y);
-}
-
-
 /* Motion estimation */
 extern "C" void c63_motion_estimate_log(struct c63_common *cm, struct cuda_frame *cframe) {
 	cudaBindTexture2D(0, &tex_ref, cframe->last_recons->Y, &tex_ref.channelDesc, cm->ypw, cm->yph, cframe->last_recons_pitch[0]);
 	cudaBindTexture2D(0, &tex_orig, cframe->image->Y, &tex_orig.channelDesc, cm->ypw, cm->yph, cframe->image_pitch[0]);
-	cuda_me_log<<<cframe->me_blockDim_Y, cframe->me_threadDim,0,cframe->stream>>>(cm->ypw, cm->yph,cframe->mb_width_Y, cframe->mb_height_Y, cframe->mbs[0], cframe->predicted->Y);
+	cuda_me_log<<<cframe->me_blockDim_Y, cframe->me_threadDim,0,cframe->stream>>>(cm->ypw, cm->yph, cframe->mb_width_Y, cframe->mb_height_Y, cframe->mbs[0], cframe->predicted->Y);
 
 	cudaBindTexture2D(0, &tex_ref, cframe->last_recons->U, &tex_ref.channelDesc, cm->upw, cm->uph, cframe->last_recons_pitch[1]);
 	cudaBindTexture2D(0, &tex_orig, cframe->image->U, &tex_orig.channelDesc, cm->upw, cm->uph, cframe->image_pitch[1]);
-	cuda_me_log<<<cframe->me_blockDim_UV, cframe->me_threadDim,0,cframe->stream>>>(cm->upw,cm->uph,cframe->mb_width_UV, cframe->mb_height_UV, cframe->mbs[1], cframe->predicted->U);
+	cuda_me_log<<<cframe->me_blockDim_UV, cframe->me_threadDim,0,cframe->stream>>>(cm->upw, cm->uph,cframe->mb_width_UV, cframe->mb_height_UV, cframe->mbs[1], cframe->predicted->U);
 
 	cudaBindTexture2D(0, &tex_ref, cframe->last_recons->V, &tex_ref.channelDesc, cm->vpw, cm->vph, cframe->last_recons_pitch[2]);
 	cudaBindTexture2D(0, &tex_orig, cframe->image->V, &tex_orig.channelDesc, cm->vpw, cm->vph, cframe->image_pitch[2]);
-	cuda_me_log<<<cframe->me_blockDim_UV, cframe->me_threadDim,0,cframe->stream>>>(cm->vpw, cm->vph,cframe->mb_width_UV, cframe->mb_height_UV, cframe->mbs[2],cframe->predicted->V);
+	cuda_me_log <<<cframe->me_blockDim_UV, cframe->me_threadDim,0,cframe->stream>>>(cm->vpw, cm->vph,cframe->mb_width_UV, cframe->mb_height_UV, cframe->mbs[2],cframe->predicted->V);
 }
 

@@ -91,7 +91,7 @@ struct c63_common {
 
 	int keyframe_interval;
 	int frames_since_keyframe;
-
+	uint8_t use_naive;
 	struct entropy_ctx e_ctx;
 };
 

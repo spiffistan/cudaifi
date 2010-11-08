@@ -130,6 +130,7 @@ struct c63_common* init_c63_enc(int width, int height) {
 static void print_help() {
 	fprintf(stderr, "Usage: ./c63enc [options] input_file\n");
 	fprintf(stderr, "Commandline options:\n");
+	fprintf(stderr, "  -N                             choose naive motion estimation\n");
 	fprintf(stderr, "  -h                             height of images to compress\n");
 	fprintf(stderr, "  -w                             width of images to compress\n");
 	fprintf(stderr, "  -o                             Output file (.mjpg)\n");
@@ -182,12 +183,12 @@ queue_t* init_workitems(struct c63_common *cm) {
 int main(int argc, char **argv) {
 	int c;
 	yuv_t *image;
-
+	uint8_t naive = 0;
 	if (argc == 1) {
 		print_help();
 	}
 
-	while ((c = getopt(argc, argv, "h:w:o:f:i:")) != -1) {
+	while ((c = getopt(argc, argv, "h:w:o:f:N")) != -1) {
 		switch (c) {
 		case 'h':
 			height = atoi(optarg);
@@ -200,6 +201,9 @@ int main(int argc, char **argv) {
 			break;
 		case 'f':
 			limit_numframes = atoi(optarg);
+			break;
+		case 'N':
+			naive = 1;
 			break;
 		default:
 			print_help();
@@ -220,6 +224,7 @@ int main(int argc, char **argv) {
 
 	struct c63_common *cm = init_c63_enc(width, height);
 
+	cm->use_naive = naive;
 
 	cm->e_ctx.fp = outfile;
 	/* Calculate the padded width and height */
@@ -245,7 +250,6 @@ int main(int argc, char **argv) {
 	/* Encode input frames */
 	int numframes = 0;
 
-	// WIP ////////////////////////////////////////////////////////////////////
 	cuda_init(cm);
 	queue_t *available = init_workitems(cm);
 	queue_t *input_queue = init_queue();
@@ -329,7 +333,6 @@ void *writer_thread(void *a) {
 	struct w_args *args = (struct w_args *) a;
 
 	while (1) {
-
 		workitem_t *w = queue_pop(args->output);
 
 		if (!w) {
@@ -348,6 +351,7 @@ void *writer_thread(void *a) {
 void encoder_thread(queue_t* input, queue_t* output, struct c63_common *cm) {
 	while (1) {
 		/* Check if keyframe */
+
 		workitem_t *w = queue_pop(input);
 		if (!w)
 			break;
@@ -359,6 +363,7 @@ void encoder_thread(queue_t* input, queue_t* output, struct c63_common *cm) {
 		} else
 			w->keyframe = 0;
 		cuda_run(cm, w);
+
 		fprintf(stderr, "Done!\n");
 
 		queue_push(output, w);

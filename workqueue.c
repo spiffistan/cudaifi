@@ -33,9 +33,6 @@ void queue_push(queue_t *fifo, workitem_t *in) {
 
 	pthread_mutex_lock(fifo->mutex);
 
-	if (fifo->size >= MAX_FRAMES) { // WAIT WHILE FULL
-		pthread_cond_wait(fifo->notFull, fifo->mutex);
-	}
 	node_t *new = malloc(sizeof(node_t));
 	new->data = in;
 	if (fifo->size != 0) {
@@ -75,7 +72,6 @@ workitem_t* queue_pop(queue_t *fifo) {
 	fifo->size--;
 
 	pthread_mutex_unlock(fifo->mutex);
-	pthread_cond_signal(fifo->notFull);
 	return out;
 }
 
