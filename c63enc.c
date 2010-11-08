@@ -55,11 +55,6 @@ struct c_args
 	struct c63_common *cm;
 } c_args;
 
-// QUEUE //////////////////////////////////////////////////////////////////////
-
-
-#define CATCH(p, str) if(p == NULL) { perror(str); exit(EXIT_FAILURE); }
-
 // READ FILE //////////////////////////////////////////////////////////////////
 
 /* Read YUV frames */
@@ -125,7 +120,6 @@ struct c63_common* init_c63_enc(int width, int height)
 	cm->me_search_range = 16; // Pixels in every direction
 	cm->keyframe_interval = 100; // Distance between keyframes
 
-
 	/* Initialize quantization tables */
 	for (i = 0; i < 64; ++i)
 	{
@@ -162,13 +156,13 @@ void reset_workitem(workitem_t *w, struct c63_common *cm)
 	memset(w->residuals->Ydct, 0, cm->ypw * cm->yph * sizeof(int16_t));
 	memset(w->residuals->Udct, 0, cm->upw * cm->uph * sizeof(int16_t));
 	memset(w->residuals->Vdct, 0, cm->vpw * cm->vph * sizeof(int16_t));
-
 }
 
 queue_t* init_workitems(struct c63_common *cm)
 {
 	queue_t* q = init_queue();
 	int i;
+	
 	for (i = 0; i < MAX_FRAMES; i++)
 	{
 		workitem_t *w;
@@ -187,6 +181,7 @@ queue_t* init_workitems(struct c63_common *cm)
 		cudaMallocHost((void**) &w->mbs[0], cm->mb_cols * cm->mb_cols * sizeof(struct macroblock));
 		cudaMallocHost((void**) &w->mbs[1], cm->mb_cols * cm->mb_cols * sizeof(struct macroblock));
 		cudaMallocHost((void**) &w->mbs[2], cm->mb_cols * cm->mb_cols * sizeof(struct macroblock));
+		
 		reset_workitem(w, cm);
 		queue_push(q, w);
 	}
@@ -198,10 +193,9 @@ int main(int argc, char **argv)
 	int c;
 	yuv_t *image;
 	uint8_t naive = 0;
+	
 	if (argc == 1)
-	{
 		print_help();
-	}
 
 	while ((c = getopt(argc, argv, "h:w:o:f:N")) != -1)
 	{
@@ -270,17 +264,17 @@ int main(int argc, char **argv)
 	/* Encode input frames */
 	int numframes = 0;
 
-	cuda_init(cm);
+	cuda_init(cm);  
+	
 	queue_t *available = init_workitems(cm);
 	queue_t *input_queue = init_queue();
 	queue_t *output_queue = init_queue();
 	input_queue->done = 0;
 	output_queue->done = 0;
-	pthread_t reader, writer, cuda_thread;
+	pthread_t reader, writer;
 
 	struct w_args *writer_args = malloc(sizeof(struct w_args));
 	struct r_args *reader_args = malloc(sizeof(struct r_args));
-	struct c_args *cuda_args = malloc(sizeof(struct c_args));
 
 	reader_args->max_frames = limit_numframes;
 	reader_args->available = available;
@@ -301,6 +295,7 @@ int main(int argc, char **argv)
 	pthread_join(writer, NULL);
 
 	cuda_stop();
+	
 	destroy_queue(input_queue);
 	destroy_queue(output_queue);
 
@@ -342,6 +337,7 @@ void *reader_thread(void *a)
 
 		workitem_t *w = queue_pop(args->available);
 		read_yuv(args->infile, w->image);
+		
 		if (!w->image || feof(args->infile))
 			break;
 
@@ -361,9 +357,8 @@ void *writer_thread(void *a)
 		workitem_t *w = queue_pop(args->output);
 
 		if (!w)
-		{
 			break;
-		}
+
 		write_frame(args->cm, w);
 
 		++args->cm->framenum;
@@ -391,12 +386,12 @@ void encoder_thread(queue_t* input, queue_t* output, struct c63_common *cm)
 			fprintf(stderr, " (keyframe) ");
 		} else
 			w->keyframe = 0;
-		cuda_run(cm, w);
+			
+		cuda_run(cm, w); // Run device code
 
 		fprintf(stderr, "Done!\n");
 
 		queue_push(output, w);
 	}
-
 	queue_stop(output);
 }
