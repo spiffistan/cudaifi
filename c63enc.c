@@ -168,10 +168,10 @@ queue_t* init_workitems(struct c63_common *cm)
         workitem_t *w;
         cudaMallocHost((void**) &w, sizeof(workitem_t));
 
-        cudaMallocHost((void**) &w->image, sizeof(yuv_t));
-        cudaMallocHost((void**) &w->image->Y, cm->width * cm->height);
-        cudaMallocHost((void**) &w->image->U, cm->width * cm->height / 4);
-        cudaMallocHost((void**) &w->image->V, cm->width * cm->height / 4);
+        cudaHostAlloc((void**) &w->image, sizeof(yuv_t), cudaHostAllocWriteCombined);
+        cudaHostAlloc((void**) &w->image->Y, cm->width * cm->height, cudaHostAllocWriteCombined);
+        cudaHostAlloc((void**) &w->image->U, cm->width * cm->height / 4, cudaHostAllocWriteCombined);
+        cudaHostAlloc((void**) &w->image->V, cm->width * cm->height / 4, cudaHostAllocWriteCombined);
 
         cudaMallocHost((void**) &w->residuals, sizeof(dct_t));
         cudaMallocHost((void**) &w->residuals->Ydct, cm->ypw * cm->yph * sizeof(int16_t));
