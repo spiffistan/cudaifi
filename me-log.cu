@@ -34,9 +34,9 @@ typedef struct point
 } point_t;
 
 __shared__ uint8_t orig[16][64];
-__shared__ min_helper current_best[16];
-__shared__ min_helper current[16][16];
-__shared__ point_t direction[16][16];
+__shared__ min_helper current_best[16]; //padded to avoid serialization
+__shared__ min_helper current[16][16]; //padded to avoid serialization
+__shared__ point_t direction[16][16]; //padded to avoid serialization
 
 __device__
 int16_t reducesum()

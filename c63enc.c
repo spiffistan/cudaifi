@@ -181,7 +181,7 @@ queue_t* init_workitems(struct c63_common *cm)
         cudaMallocHost((void**) &w->mbs[0], cm->mb_cols * cm->mb_cols * sizeof(struct macroblock));
         cudaMallocHost((void**) &w->mbs[1], cm->mb_cols * cm->mb_cols * sizeof(struct macroblock));
         cudaMallocHost((void**) &w->mbs[2], cm->mb_cols * cm->mb_cols * sizeof(struct macroblock));
-        
+
         reset_workitem(w, cm);
         queue_push(q, w);
     }
